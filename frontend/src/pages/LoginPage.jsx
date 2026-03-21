@@ -1,0 +1,85 @@
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const { login, error, loading, settings, isAuthenticated, user } = useAuth();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(user.role === 'employee' ? '/profile' : '/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    try {
+      await login(form);
+    } catch (submitError) {
+      console.error(submitError);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-brand-gradient px-4 py-8 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md">
+        <div className="w-full rounded-[2rem] bg-white p-6 shadow-soft sm:p-8">
+          <div className="mb-8 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-gradient text-xl font-bold text-white shadow-lg">
+              {settings?.branding?.logoText || 'KH'}
+            </div>
+            <h1 className="mt-5 text-3xl font-semibold text-slate-900">{settings?.labels?.loginTitle || 'Sign in to KEREA HRMS'}</h1>
+            <p className="mt-2 text-sm text-slate-500">{settings?.labels?.loginSubtitle || 'Sign in to your account'}</p>
+          </div>
+
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">{settings?.labels?.loginEmailLabel || 'Email'}</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                placeholder={settings?.labels?.loginEmailPlaceholder || 'name@kerea.local'}
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">{settings?.labels?.loginPasswordLabel || 'Password'}</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                  placeholder={settings?.labels?.loginPasswordPlaceholder || 'Enter password'}
+                  className="pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            {error ? <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-2xl bg-brand-gradient px-4 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loading ? 'Signing in...' : settings?.labels?.loginButtonText || 'Login'}
+            </button>
+          </form>
+          <p className="mt-6 text-center text-xs text-slate-400">{settings?.labels?.loginFooterText || '2026 KEREA. All rights reserved.'}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
