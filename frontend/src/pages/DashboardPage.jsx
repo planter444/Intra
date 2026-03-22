@@ -14,6 +14,10 @@ export default function DashboardPage() {
   const canOpenDocuments = ['employee', 'supervisor', 'hr', 'admin', 'ceo'].includes(user?.role);
   const navigate = useNavigate();
   const roleLabel = user?.role === 'hr' || user?.role === 'ceo' ? 'CEO' : user?.role?.toUpperCase();
+  const leaveSummaryTitle = user?.role === 'ceo' ? 'Leave Types' : 'My Leave Buckets';
+  const leaveSummaryHelper = user?.role === 'ceo' ? 'Configured leave types available to the company' : 'Leave balances assigned to you';
+  const documentSummaryTitle = user?.role === 'ceo' ? 'Documents' : 'My Documents';
+  const documentSummaryHelper = user?.role === 'ceo' ? 'Company documents available to leadership' : 'Secure files available to you';
 
   useEffect(() => {
     fetchDashboardSummary().then(setSummary).catch(console.error);
@@ -27,11 +31,11 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {canViewOrgMetrics ? <StatCard title="Total Headcount" value={summary?.headcount ?? '--'} helper="Active non-deleted users" /> : null}
-        {canViewOrgMetrics ? <StatCard title="Pending Leave Actions" value={summary?.pendingLeaves ?? '--'} helper="Awaiting executive review" accent="from-amber-600 to-orange-500" /> : null}
-        {canViewOrgMetrics ? <StatCard title="Approved Leave Requests" value={summary?.approvedLeaves ?? '--'} helper="Completed approvals" accent="from-blue-700 to-cyan-500" /> : null}
-        <StatCard title="My Leave Buckets" value={summary?.myLeaveBalanceTypes ?? '--'} helper="Leave balances assigned to you" accent="from-blue-700 to-cyan-500" />
-        <StatCard title="My Documents" value={summary?.myDocuments ?? '--'} helper="Secure files available to you" accent="from-violet-700 to-fuchsia-500" />
+        {canViewOrgMetrics ? <StatCard title="Total Headcount" value={summary?.headcount ?? '--'} helper="Active non-deleted users" onClick={canOpenEmployees ? () => navigate('/employees') : undefined} /> : null}
+        {canViewOrgMetrics ? <StatCard title="Pending Leave Actions" value={summary?.pendingLeaves ?? '--'} helper="Awaiting executive review" accent="from-amber-600 to-orange-500" onClick={() => navigate('/leaves')} /> : null}
+        {canViewOrgMetrics ? <StatCard title="Approved Leave Requests" value={summary?.approvedLeaves ?? '--'} helper="Completed approvals" accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} /> : null}
+        <StatCard title={leaveSummaryTitle} value={summary?.myLeaveBalanceTypes ?? '--'} helper={leaveSummaryHelper} accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
+        <StatCard title={documentSummaryTitle} value={summary?.myDocuments ?? '--'} helper={documentSummaryHelper} accent="from-violet-700 to-fuchsia-500" onClick={canOpenDocuments ? () => navigate('/documents') : undefined} />
       </div>
 
       <div>

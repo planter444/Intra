@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Eye, EyeOff, Pencil } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
@@ -14,6 +15,7 @@ export default function ProfilePage() {
   const [messageTone, setMessageTone] = useState('success');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordMessageTone, setPasswordMessageTone] = useState('success');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -23,7 +25,9 @@ export default function ProfilePage() {
     gender: ''
   });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordVisibility, setPasswordVisibility] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
   const canEditFullProfile = user?.role === 'ceo';
+  const isProfileEditable = canEditFullProfile ? isEditingProfile : true;
 
   useEffect(() => {
     if (!user?.id) {
@@ -42,6 +46,7 @@ export default function ProfilePage() {
           positionTitle: data.user.positionTitle || '',
           gender: data.user.gender || ''
         });
+        setIsEditingProfile(false);
       })
       .catch(console.error);
   }, [user?.id]);
@@ -110,6 +115,7 @@ export default function ProfilePage() {
         positionTitle: updated.positionTitle || '',
         gender: updated.gender || ''
       });
+      setIsEditingProfile(false);
       setMessageTone('success');
       setMessage('Profile updated successfully.');
     } catch (error) {
@@ -141,6 +147,28 @@ export default function ProfilePage() {
     }
   };
 
+  const handleStartEditing = () => {
+    setMessage('');
+    setIsEditingProfile(true);
+  };
+
+  const handleCancelEditing = () => {
+    setForm({
+      firstName: profile?.firstName || '',
+      lastName: profile?.lastName || '',
+      email: profile?.email || '',
+      phone: profile?.phone || '',
+      positionTitle: profile?.positionTitle || '',
+      gender: profile?.gender || ''
+    });
+    setMessage('');
+    setIsEditingProfile(false);
+  };
+
+  const togglePasswordVisibility = (field) => {
+    setPasswordVisibility((current) => ({ ...current, [field]: !current[field] }));
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, Admin, or CEO.'} />
@@ -153,27 +181,37 @@ export default function ProfilePage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
-        <SectionCard title="Personal information" subtitle="Changes are stored securely and governed by backend permissions.">
+        <SectionCard title="Personal information" subtitle="Changes are stored securely and governed by backend permissions." actions={canEditFullProfile ? [
+          isEditingProfile ? (
+            <button key="cancel-edit" type="button" className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={handleCancelEditing}>
+              Cancel edit
+            </button>
+          ) : (
+            <button key="start-edit" type="button" className="rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-medium text-white shadow-lg" onClick={handleStartEditing}>
+              <span className="inline-flex items-center gap-2"><Pencil size={16} />Edit</span>
+            </button>
+          )
+        ] : undefined}>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">First name</label>
-              <input value={form.firstName} disabled={!canEditFullProfile} className={!canEditFullProfile ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))} />
+              <input value={form.firstName} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Last name</label>
-              <input value={form.lastName} disabled={!canEditFullProfile} className={!canEditFullProfile ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))} />
+              <input value={form.lastName} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Email</label>
-              <input type="email" value={form.email} disabled={!canEditFullProfile} className={!canEditFullProfile ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+              <input type="email" value={form.email} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Phone</label>
-              <input inputMode="numeric" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value.replace(/\D/g, '') }))} />
+              <input inputMode="numeric" value={form.phone} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value.replace(/\D/g, '') }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Gender</label>
-              <select value={form.gender} disabled={!canEditFullProfile} className={!canEditFullProfile ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}>
+              <select value={form.gender} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}>
                 <option value="">Not set</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
@@ -182,12 +220,14 @@ export default function ProfilePage() {
             </div>
             <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-medium text-slate-700">Position title</label>
-              <input value={form.positionTitle} disabled={!canEditFullProfile} className={!canEditFullProfile ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, positionTitle: event.target.value }))} />
+              <input value={form.positionTitle} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, positionTitle: event.target.value }))} />
             </div>
             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-              <button type="submit" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg">
-                Save profile
-              </button>
+              {!canEditFullProfile || isEditingProfile ? (
+                <button type="submit" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg">
+                  Save profile
+                </button>
+              ) : null}
               {message ? <span className={`text-sm ${messageTone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>{message}</span> : null}
             </div>
           </form>
@@ -199,15 +239,30 @@ export default function ProfilePage() {
               <form className="space-y-4" onSubmit={handlePasswordSubmit}>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">Current password</label>
-                  <input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} />
+                  <div className="relative">
+                    <input type={passwordVisibility.currentPassword ? 'text' : 'password'} className="pr-12" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} />
+                    <button type="button" onClick={() => togglePasswordVisibility('currentPassword')} className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                      {passwordVisibility.currentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">New password</label>
-                  <input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} />
+                  <div className="relative">
+                    <input type={passwordVisibility.newPassword ? 'text' : 'password'} className="pr-12" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} />
+                    <button type="button" onClick={() => togglePasswordVisibility('newPassword')} className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                      {passwordVisibility.newPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">Confirm new password</label>
-                  <input type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} />
+                  <div className="relative">
+                    <input type={passwordVisibility.confirmPassword ? 'text' : 'password'} className="pr-12" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} />
+                    <button type="button" onClick={() => togglePasswordVisibility('confirmPassword')} className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                      {passwordVisibility.confirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <button type="submit" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg">

@@ -175,7 +175,7 @@ export default function AppLayout({ children }) {
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 sm:flex-nowrap">
+            <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   className="rounded-2xl border border-slate-200 p-2 text-slate-600 md:hidden"
@@ -185,12 +185,12 @@ export default function AppLayout({ children }) {
                 </button>
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-400">KEREA intranet</p>
-                  <h2 className="truncate text-lg font-semibold text-slate-900">
+                  <h2 className="break-words text-[15px] font-semibold leading-tight text-slate-900 sm:truncate sm:text-lg">
                     {settings?.labels?.dashboardWelcome || 'Welcome back'}, {user?.firstName}
                   </h2>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-2xl bg-brand-gradient px-3 py-2 text-white shadow-lg sm:px-4">
+              <Link to="/profile" className="flex shrink-0 items-center gap-3 rounded-2xl bg-brand-gradient px-3 py-2 text-white shadow-lg sm:px-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow">
                   <User size={16} />
                 </div>
@@ -198,7 +198,7 @@ export default function AppLayout({ children }) {
                   <p className="text-sm font-semibold text-white">{user?.fullName}</p>
                   <p className="text-xs uppercase tracking-wide text-white/80">{location.pathname}</p>
                 </div>
-              </div>
+              </Link>
             </div>
           </header>
 

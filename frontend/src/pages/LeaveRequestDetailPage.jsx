@@ -244,6 +244,10 @@ export default function LeaveRequestDetailPage() {
   };
 
   const handleCancelRequest = async () => {
+    if (!window.confirm('Are you sure you want to cancel this leave request?')) {
+      return;
+    }
+
     try {
       await cancelLeaveRequest(id);
       navigate('/leaves', { replace: true });

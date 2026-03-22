@@ -13,15 +13,28 @@ const applyBranding = (settings) => {
     return;
   }
 
+  const isMobileViewport = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+  const useMobileBranding = isMobileViewport && branding.useDesktopColorsOnMobile === false;
+  const resolvedBranding = {
+    primaryColor: useMobileBranding ? (branding.mobilePrimaryColor || branding.primaryColor) : branding.primaryColor,
+    secondaryColor: useMobileBranding ? (branding.mobileSecondaryColor || branding.secondaryColor) : branding.secondaryColor,
+    accentColor: useMobileBranding ? (branding.mobileAccentColor || branding.accentColor) : branding.accentColor,
+    backgroundColor: useMobileBranding ? (branding.mobileBackgroundColor || branding.backgroundColor) : branding.backgroundColor,
+    cardColor: useMobileBranding ? (branding.mobileCardColor || branding.cardColor) : branding.cardColor,
+    textColor: useMobileBranding ? (branding.mobileTextColor || branding.textColor) : branding.textColor,
+    gradientFrom: useMobileBranding ? (branding.mobileGradientFrom || branding.gradientFrom) : branding.gradientFrom,
+    gradientTo: useMobileBranding ? (branding.mobileGradientTo || branding.gradientTo) : branding.gradientTo
+  };
+
   const root = document.documentElement;
-  root.style.setProperty('--brand-primary', branding.primaryColor || '#166534');
-  root.style.setProperty('--brand-secondary', branding.secondaryColor || '#22c55e');
-  root.style.setProperty('--brand-accent', branding.accentColor || '#86efac');
-  root.style.setProperty('--brand-gradient-from', branding.gradientFrom || '#14532d');
-  root.style.setProperty('--brand-gradient-to', branding.gradientTo || '#22c55e');
-  root.style.setProperty('--surface-page', branding.backgroundColor || '#f4fbf6');
-  root.style.setProperty('--surface-card', branding.cardColor || '#ffffff');
-  root.style.setProperty('--text-primary', branding.textColor || '#0f172a');
+  root.style.setProperty('--brand-primary', resolvedBranding.primaryColor || '#166534');
+  root.style.setProperty('--brand-secondary', resolvedBranding.secondaryColor || '#22c55e');
+  root.style.setProperty('--brand-accent', resolvedBranding.accentColor || '#86efac');
+  root.style.setProperty('--brand-gradient-from', resolvedBranding.gradientFrom || '#14532d');
+  root.style.setProperty('--brand-gradient-to', resolvedBranding.gradientTo || '#22c55e');
+  root.style.setProperty('--surface-page', resolvedBranding.backgroundColor || '#f4fbf6');
+  root.style.setProperty('--surface-card', resolvedBranding.cardColor || '#ffffff');
+  root.style.setProperty('--text-primary', resolvedBranding.textColor || '#0f172a');
   document.title = branding.appName || 'KEREA HRMS';
 };
 
@@ -46,7 +59,10 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   useEffect(() => {
-    applyBranding(settings);
+    const syncBranding = () => applyBranding(settings);
+    syncBranding();
+    window.addEventListener('resize', syncBranding);
+    return () => window.removeEventListener('resize', syncBranding);
   }, [settings]);
 
   useEffect(() => {

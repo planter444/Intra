@@ -10,7 +10,16 @@ module.exports = {
     cardColor: '#ffffff',
     textColor: '#0f172a',
     gradientFrom: '#14532d',
-    gradientTo: '#22c55e'
+    gradientTo: '#22c55e',
+    useDesktopColorsOnMobile: true,
+    mobilePrimaryColor: '#166534',
+    mobileSecondaryColor: '#22c55e',
+    mobileAccentColor: '#86efac',
+    mobileBackgroundColor: '#f4fbf6',
+    mobileCardColor: '#ffffff',
+    mobileTextColor: '#0f172a',
+    mobileGradientFrom: '#14532d',
+    mobileGradientTo: '#22c55e'
   },
   labels: {
     employeeDirectoryTitle: 'Employees',

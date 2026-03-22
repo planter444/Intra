@@ -44,10 +44,26 @@ const fetchDocumentBlob = async (documentId, preview = false) => {
 };
 
 export const previewDocument = async (documentId) => {
-  const { blob } = await fetchDocumentBlob(documentId, true);
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank', 'noopener,noreferrer');
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  const previewWindow = window.open('', '_blank');
+
+  try {
+    const { blob } = await fetchDocumentBlob(documentId, true);
+    const objectUrl = URL.createObjectURL(blob);
+
+    if (previewWindow) {
+      previewWindow.location.replace(objectUrl);
+    } else {
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  } catch (error) {
+    if (previewWindow && !previewWindow.closed) {
+      previewWindow.close();
+    }
+
+    throw error;
+  }
 };
 
 export const downloadDocument = async (documentId) => {

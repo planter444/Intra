@@ -78,6 +78,16 @@ export default function SettingsPage() {
     }));
   };
 
+  const setBrandingBoolean = (key, value) => {
+    setDraft((current) => ({
+      ...current,
+      branding: {
+        ...current.branding,
+        [key]: value
+      }
+    }));
+  };
+
   const setLabel = (key, value) => {
     setDraft((current) => ({
       ...current,
@@ -254,7 +264,16 @@ export default function SettingsPage() {
       {!isCeoOnly && activePage === 'branding' ? (
         <div className="grid gap-6 xl:grid-cols-2">
           <SectionCard title="Branding and theme" subtitle="These values control logos, gradients, cards, buttons, and main theme colors.">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-5">
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                <input type="checkbox" className="mt-1" checked={draft.branding?.useDesktopColorsOnMobile !== false} onChange={(event) => setBrandingBoolean('useDesktopColorsOnMobile', event.target.checked)} />
+                <span>
+                  <span className="block font-semibold text-slate-900">Use desktop colors on phones</span>
+                  <span className="mt-1 block text-xs text-slate-500">Turn this off if you want a different mobile color palette.</span>
+                </span>
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
               {[
                 ['organizationName', 'Organization Name'],
                 ['appName', 'Application Name'],
@@ -273,16 +292,53 @@ export default function SettingsPage() {
                   <input value={draft.branding?.[key] || ''} onChange={(event) => setBranding(key, event.target.value)} />
                 </div>
               ))}
+              </div>
+
+              {draft.branding?.useDesktopColorsOnMobile === false ? (
+                <div>
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Mobile colors</h3>
+                    <p className="mt-1 text-xs text-slate-500">These colors apply on smaller screens while desktop colors stay unchanged.</p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {[
+                      ['mobilePrimaryColor', 'Mobile Primary Color'],
+                      ['mobileSecondaryColor', 'Mobile Secondary Color'],
+                      ['mobileAccentColor', 'Mobile Accent Color'],
+                      ['mobileBackgroundColor', 'Mobile Background Color'],
+                      ['mobileCardColor', 'Mobile Card Color'],
+                      ['mobileTextColor', 'Mobile Text Color'],
+                      ['mobileGradientFrom', 'Mobile Gradient From'],
+                      ['mobileGradientTo', 'Mobile Gradient To']
+                    ].map(([key, label]) => (
+                      <div key={key}>
+                        <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
+                        <input value={draft.branding?.[key] || ''} onChange={(event) => setBranding(key, event.target.value)} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </SectionCard>
 
           <SectionCard title="Brand preview" subtitle="Quick visual preview of your current logo and theme settings.">
-            <div className="rounded-[2rem] p-6 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.gradientTo || '#22c55e'})` }}>
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold">
-                {draft.branding?.logoText || 'KH'}
+            <div className="space-y-4">
+              <div className="rounded-[2rem] p-6 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.gradientTo || '#22c55e'})` }}>
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold">
+                  {draft.branding?.logoText || 'KH'}
+                </div>
+                <h3 className="mt-5 text-2xl font-semibold">{draft.branding?.organizationName || 'KEREA'}</h3>
+                <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
               </div>
-              <h3 className="mt-5 text-2xl font-semibold">{draft.branding?.organizationName || 'KEREA'}</h3>
-              <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
+
+              {draft.branding?.useDesktopColorsOnMobile === false ? (
+                <div className="max-w-xs rounded-[2rem] p-5 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.mobileGradientFrom || draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.mobileGradientTo || draft.branding?.gradientTo || '#22c55e'})` }}>
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/70">Mobile preview</p>
+                  <h3 className="mt-4 text-xl font-semibold">{draft.branding?.organizationName || 'KEREA'}</h3>
+                  <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
+                </div>
+              ) : null}
             </div>
           </SectionCard>
         </div>
@@ -603,22 +659,25 @@ export default function SettingsPage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">Days Allowed</label>
                 <input type="number" min="0" value={leaveTypeEditor.form.defaultDays} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, defaultDays: Number(event.target.value) } }))} />
               </div>
-              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={leaveTypeEditor.form.requiresCeoApproval} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, requiresCeoApproval: event.target.checked } }))} />
-                Requires CEO approval
-              </label>
-              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={leaveTypeEditor.form.isPaid} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, isPaid: event.target.checked } }))} />
-                Paid Leave
-              </label>
-              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={leaveTypeEditor.form.requiresDocument} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, requiresDocument: event.target.checked } }))} />
-                Requires Document
-              </label>
-              <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={leaveTypeEditor.form.canCarryForward} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, canCarryForward: event.target.checked } }))} />
-                Can Carry Forward
-              </label>
+              <div>
+                <p className="mb-3 text-sm font-medium text-slate-700">Leave properties</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['requiresCeoApproval', 'Requires CEO approval', 'Send this leave type for CEO approval before completion.'],
+                    ['isPaid', 'Paid Leave', 'Mark this leave type as paid instead of unpaid.'],
+                    ['requiresDocument', 'Requires Document', 'Users must attach a supporting document before submission.'],
+                    ['canCarryForward', 'Can Carry Forward', 'Unused balance can be carried into the next period.']
+                  ].map(([key, label, helper]) => (
+                    <label key={key} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      <input type="checkbox" className="mt-1" checked={Boolean(leaveTypeEditor.form[key])} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, [key]: event.target.checked } }))} />
+                      <span>
+                        <span className="block font-medium text-slate-900">{label}</span>
+                        <span className="mt-1 block text-xs text-slate-500">{helper}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           </Modal>
         </div>
