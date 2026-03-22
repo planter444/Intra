@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users } from 'lucide-react';
+import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments } from '../services/documentService';
@@ -55,6 +55,16 @@ export default function AppLayout({ children }) {
   const roleDisplay = user?.role === 'hr' || user?.role === 'ceo'
     ? 'CEO'
     : user?.role?.toUpperCase();
+  const mobileMenuOpenStyle = {
+    backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
+    color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
+    borderColor: settings?.branding?.mobileMenuOpenBorderColor || '#e2e8f0'
+  };
+  const mobileMenuCloseStyle = {
+    backgroundColor: settings?.branding?.mobileMenuCloseBackgroundColor || '#166534',
+    color: settings?.branding?.mobileMenuCloseTextColor || '#ffffff',
+    borderColor: settings?.branding?.mobileMenuCloseBorderColor || '#22c55e'
+  };
 
   const navigation = useMemo(() => {
     const fallbackItems = defaultNavigationByRole[user?.role] || ['dashboard'];
@@ -124,8 +134,8 @@ export default function AppLayout({ children }) {
                 <h1 className="truncate text-lg font-semibold">{settings?.branding?.appName || 'HRMS'}</h1>
               </div>
             </Link>
-            <button className="rounded-xl border border-white/10 p-2 md:hidden" onClick={closeMobile}>
-              ✕
+            <button className="rounded-xl border p-2 shadow-md md:hidden" style={mobileMenuCloseStyle} onClick={closeMobile}>
+              <X size={18} />
             </button>
           </div>
 
@@ -178,7 +188,8 @@ export default function AppLayout({ children }) {
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
-                  className="rounded-2xl border border-slate-200 p-2 text-slate-600 md:hidden"
+                  className="rounded-2xl border p-2 shadow-md md:hidden"
+                  style={mobileMenuOpenStyle}
                   onClick={() => setMobileOpen((current) => !current)}
                 >
                   <Menu size={18} />

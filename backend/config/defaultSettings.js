@@ -19,7 +19,13 @@ module.exports = {
     mobileCardColor: '#ffffff',
     mobileTextColor: '#0f172a',
     mobileGradientFrom: '#14532d',
-    mobileGradientTo: '#22c55e'
+    mobileGradientTo: '#22c55e',
+    mobileMenuOpenBackgroundColor: '#ffffff',
+    mobileMenuOpenTextColor: '#475569',
+    mobileMenuOpenBorderColor: '#e2e8f0',
+    mobileMenuCloseBackgroundColor: 'rgba(255,255,255,0.1)',
+    mobileMenuCloseTextColor: '#ffffff',
+    mobileMenuCloseBorderColor: 'rgba(255,255,255,0.1)'
   },
   labels: {
     employeeDirectoryTitle: 'Employees',
@@ -77,6 +83,19 @@ module.exports = {
     { name: 'Finance', description: 'Accounting and reporting' },
     { name: 'Operations', description: 'Operational delivery' },
     { name: 'Marketing', description: 'Marketing and communications' }
+  ],
+  roles: [
+    { key: 'employee', label: 'Employee', permissions: ['View own profile', 'Apply for leave', 'View own documents'] },
+    { key: 'supervisor', label: 'Supervisor', permissions: ['Review direct reports', 'Approve supervisor-stage leave', 'View team documents list'] },
+    { key: 'hr', label: 'HR', permissions: ['Operational leave review', 'Manage employees', 'Manage company documents'] },
+    { key: 'admin', label: 'Admin', permissions: ['Manage employees', 'Manage settings', 'View audit logs'] },
+    { key: 'ceo', label: 'CEO', permissions: ['Final approvals', 'Executive oversight', 'Manage employees and documents'] }
+  ],
+  folders: [
+    { code: 'id', label: 'ID' },
+    { code: 'contracts', label: 'Contracts' },
+    { code: 'certificates', label: 'Certificates' },
+    { code: 'other', label: 'Other' }
   ],
   leaveTypes: [
     { code: 'annual', label: 'Annual Leave', defaultDays: 21, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: true },

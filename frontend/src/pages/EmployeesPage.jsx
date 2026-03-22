@@ -46,6 +46,7 @@ export default function EmployeesPage() {
   }, []);
 
   const canManage = user?.role === 'admin' || user?.role === 'ceo';
+  const isSupervisorView = user?.role === 'supervisor';
 
   useEffect(() => {
     if (!formOpen) {
@@ -69,6 +70,17 @@ export default function EmployeesPage() {
     () => (settings?.departments || []).filter((department) => department?.name !== 'Human Resources'),
     [settings]
   );
+  const roleOptions = useMemo(() => {
+    const configuredRoles = Array.isArray(settings?.roles) ? settings.roles : [];
+    const fallbackRoles = [
+      { key: 'employee', label: 'Employee' },
+      { key: 'supervisor', label: 'Supervisor' },
+      { key: 'hr', label: 'HR' },
+      { key: 'admin', label: 'Admin' },
+      { key: 'ceo', label: 'CEO' }
+    ];
+    return fallbackRoles.map((role) => configuredRoles.find((item) => item.key === role.key) || role);
+  }, [settings?.roles]);
   const supervisorOptions = useMemo(
     () => users.filter((candidate) => candidate.isActive && !candidate.isDeleted && ['supervisor', 'admin', 'ceo', 'hr'].includes(candidate.role)),
     [users]
@@ -229,12 +241,7 @@ export default function EmployeesPage() {
 
   const getUserInitials = (record) => `${record.firstName?.[0] || ''}${record.lastName?.[0] || ''}`.toUpperCase() || 'U';
 
-  const roleFilterOptions = [
-    ['employee', 'Employee'],
-    ['supervisor', 'Supervisor'],
-    ['admin', 'Admin'],
-    ['ceo', 'CEO']
-  ];
+  const roleFilterOptions = roleOptions.map((role) => [role.key, role.label]);
 
   return (
     <div className="space-y-6">
@@ -295,10 +302,9 @@ export default function EmployeesPage() {
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Role</label>
                 <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}>
-                  <option value="employee">Employee</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="admin">Admin</option>
-                  <option value="ceo">CEO</option>
+                  {roleOptions.map((role) => (
+                    <option key={role.key} value={role.key}>{role.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -346,23 +352,27 @@ export default function EmployeesPage() {
       ) : null}
 
       <SectionCard subtitle="Filter employees by name, role, and department. Supervisors only see employees under them.">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.3fr),220px,220px,180px]">
+        <div className={`grid gap-3 ${isSupervisorView ? 'lg:grid-cols-[minmax(0,1fr),180px]' : 'lg:grid-cols-[minmax(0,1.3fr),220px,220px,180px]'}`}>
           <label className="relative block">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><Search size={16} /></span>
             <input className="pl-11" placeholder="Search employees..." value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
           </label>
-          <select value={filters.role} onChange={(event) => setFilters((current) => ({ ...current, role: event.target.value }))}>
-            <option value="">All Roles</option>
-            {roleFilterOptions.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-          <select value={filters.departmentId} onChange={(event) => setFilters((current) => ({ ...current, departmentId: event.target.value }))}>
-            <option value="">All Departments</option>
-            {departmentOptions.map((department) => (
-              <option key={department.id || department.name} value={department.id || ''}>{department.name}</option>
-            ))}
-          </select>
+          {!isSupervisorView ? (
+            <select value={filters.role} onChange={(event) => setFilters((current) => ({ ...current, role: event.target.value }))}>
+              <option value="">All Roles</option>
+              {roleFilterOptions.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          ) : null}
+          {!isSupervisorView ? (
+            <select value={filters.departmentId} onChange={(event) => setFilters((current) => ({ ...current, departmentId: event.target.value }))}>
+              <option value="">All Departments</option>
+              {departmentOptions.map((department) => (
+                <option key={department.id || department.name} value={department.id || ''}>{department.name}</option>
+              ))}
+            </select>
+          ) : null}
           <button type="button" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700" onClick={clearFilters}>
             <RotateCcw size={16} />Clear Filters
           </button>

@@ -1,14 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../config/env');
+const defaultSettings = require('../config/defaultSettings');
+const settingsModel = require('../models/settingsModel');
 
 let cloudinaryClient = null;
 
-const folderTypes = ['id', 'contracts', 'certificates', 'other'];
 const isRemoteStoragePath = (value) => /^https?:\/\//i.test(String(value || ''));
 
 const sanitizeFilename = (value) => value.replace(/[^a-zA-Z0-9._-]/g, '_');
 const isCloudinaryEnabled = () => env.mediaStorage === 'cloudinary';
+const normalizeFolderCode = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
 
 const ensureCloudinaryConfigured = () => {
   if (!env.cloudinaryCloudName || !env.cloudinaryApiKey || !env.cloudinaryApiSecret) {
@@ -33,9 +35,34 @@ const getCloudinaryClient = () => {
   return cloudinaryClient;
 };
 
+const getConfiguredFolders = async () => {
+  const settings = await settingsModel.getGlobal();
+  const configuredFolders = Array.isArray(settings?.payload?.folders) && settings.payload.folders.length
+    ? settings.payload.folders
+    : defaultSettings.folders;
+
+  const seenCodes = new Set();
+  return configuredFolders.reduce((accumulator, folder) => {
+    const code = normalizeFolderCode(folder?.code);
+    if (!code || seenCodes.has(code)) {
+      return accumulator;
+    }
+
+    seenCodes.add(code);
+    accumulator.push({
+      code,
+      label: String(folder?.label || code).trim() || code
+    });
+    return accumulator;
+  }, []);
+};
+
+const getFolderTypeCodes = async () => (await getConfiguredFolders()).map((folder) => folder.code);
+
 const ensureEmployeeFolders = async (userId) => {
   await fs.promises.mkdir(path.join(env.filesRoot, userId), { recursive: true });
 
+  const folderTypes = await getFolderTypeCodes();
   await Promise.all(
     folderTypes.map((folder) => fs.promises.mkdir(path.join(env.filesRoot, userId, folder), { recursive: true }))
   );
@@ -77,7 +104,7 @@ const saveDocument = async ({ userId, folderType, file }) => {
     };
   }
 
-  await ensureEmployeeFolders(userId);
+  await fs.promises.mkdir(path.join(env.filesRoot, userId, folderType), { recursive: true });
   const storedName = `${Date.now()}-${sanitizeFilename(file.originalname)}`;
   const targetPath = path.join(env.filesRoot, userId, folderType, storedName);
 
@@ -103,7 +130,8 @@ const resolveDocumentPath = (storagePath) => path.resolve(storagePath);
 
 module.exports = {
   deleteStoredDocument,
-  folderTypes,
+  getConfiguredFolders,
+  getFolderTypeCodes,
   getRemoteDocumentUrl,
   ensureEmployeeFolders,
   isRemoteStoragePath,

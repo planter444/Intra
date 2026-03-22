@@ -1,12 +1,20 @@
 const fs = require('fs');
 const documentModel = require('../models/documentModel');
 const { logAction } = require('../services/auditService');
-const { deleteStoredDocument, folderTypes, getRemoteDocumentUrl, isRemoteStoragePath, saveDocument, resolveDocumentPath } = require('../services/documentService');
+const { deleteStoredDocument, getFolderTypeCodes, getRemoteDocumentUrl, isRemoteStoragePath, saveDocument, resolveDocumentPath } = require('../services/documentService');
 
 const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition }) => {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error('Unable to fetch remote document.');
+    const remoteErrorHeader = response.headers.get('x-cld-error');
+    const remoteErrorBody = remoteErrorHeader ? '' : await response.text();
+    const remoteError = remoteErrorHeader || remoteErrorBody || 'Unable to fetch remote document.';
+    const error = new Error(/untrusted|show_original_customer_untrusted|deny|blocked for delivery/i.test(remoteError)
+      ? 'Cloudinary is blocking delivery for this document. Enable PDF/ZIP delivery in your Cloudinary security settings, then try again.'
+      : 'Unable to fetch this document right now.'
+    );
+    error.statusCode = 502;
+    throw error;
   }
 
   const arrayBuffer = await response.arrayBuffer();
@@ -52,7 +60,8 @@ const uploadDocument = async (req, res, next) => {
       return res.status(400).json({ message: 'A file is required.' });
     }
 
-    if (!folderTypes.includes(folderType)) {
+    const folderTypes = await getFolderTypeCodes();
+    if (!folderTypes.includes(String(folderType || '').trim().toLowerCase())) {
       return res.status(400).json({ message: 'Invalid document folder type.' });
     }
 

@@ -11,12 +11,13 @@ const styles = {
 export default function RoleBadge({ role, showActingLabel = false }) {
   const { settings } = useAuth();
   const actingHrLabel = settings?.labels?.actingHrLabel || 'CEO';
+  const configuredRoleLabel = settings?.roles?.find((item) => item.key === role)?.label;
   const labels = {
-    employee: 'employee',
-    supervisor: 'supervisor',
-    hr: actingHrLabel,
-    admin: 'admin',
-    ceo: 'CEO'
+    employee: configuredRoleLabel || 'employee',
+    supervisor: configuredRoleLabel || 'supervisor',
+    hr: showActingLabel ? actingHrLabel : (configuredRoleLabel || actingHrLabel),
+    admin: configuredRoleLabel || 'admin',
+    ceo: configuredRoleLabel || 'CEO'
   };
 
   return (

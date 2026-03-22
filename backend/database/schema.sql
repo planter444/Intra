@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS documents (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   uploaded_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
-  folder_type VARCHAR(30) NOT NULL CHECK (folder_type IN ('id', 'contracts', 'certificates', 'other')),
+  folder_type VARCHAR(30) NOT NULL CHECK (CHAR_LENGTH(TRIM(folder_type)) > 0),
   file_name VARCHAR(255) NOT NULL,
   stored_name VARCHAR(255) NOT NULL,
   mime_type VARCHAR(120) NOT NULL,
@@ -167,6 +167,12 @@ ADD COLUMN IF NOT EXISTS requires_document BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE leave_types
 ADD COLUMN IF NOT EXISTS can_carry_forward BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE documents
+DROP CONSTRAINT IF EXISTS documents_folder_type_check;
+
+ALTER TABLE documents
+ADD CONSTRAINT documents_folder_type_check CHECK (CHAR_LENGTH(TRIM(folder_type)) > 0);
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);

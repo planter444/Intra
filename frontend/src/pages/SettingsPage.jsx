@@ -13,13 +13,30 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
 
 const LOGIN_PAGE_KEYS = ['loginTitle', 'loginSubtitle', 'loginEmailLabel', 'loginPasswordLabel', 'loginEmailPlaceholder', 'loginPasswordPlaceholder', 'loginButtonText', 'loginFooterText'];
+const isHexColor = (value) => /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(String(value || '').trim());
+
+function SettingsInput({ label, value, onChange, colorPicker = false }) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
+      {colorPicker ? (
+        <div className="flex items-center gap-3">
+          <input value={value || ''} onChange={(event) => onChange(event.target.value)} />
+          <input type="color" value={isHexColor(value) ? value : '#166534'} onChange={(event) => onChange(event.target.value)} className="h-11 w-16 rounded-xl border border-slate-200 bg-white p-1" />
+        </div>
+      ) : (
+        <input value={value || ''} onChange={(event) => onChange(event.target.value)} />
+      )}
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const { settings, replaceSettings, user } = useAuth();
   const navigate = useNavigate();
   const isCeoOnly = user?.role === 'ceo';
   const availablePages = isCeoOnly
-    ? [['employees', 'Employees Page'], ['leave', 'Leave Page']]
+    ? [['employees', 'Employees Page'], ['documents', 'Documents Page'], ['leave', 'Leave Page']]
     : [
         ['branding', 'Branding'],
         ['dashboard', 'Dashboard'],
@@ -38,6 +55,7 @@ export default function SettingsPage() {
   const leaveSectionRef = useRef(null);
   const leaveTypeNameInputRef = useRef(null);
   const departmentInputRefs = useRef([]);
+  const folderInputRefs = useRef([]);
 
   useEffect(() => {
     if (settings) {
@@ -60,6 +78,8 @@ export default function SettingsPage() {
   }, [leaveTypeEditor.open]);
 
   const departments = useMemo(() => (draft.departments || []).filter((department) => department?.name !== 'Human Resources'), [draft]);
+  const roles = useMemo(() => draft.roles || [], [draft]);
+  const folders = useMemo(() => draft.folders || [], [draft]);
   const leaveTypes = useMemo(() => draft.leaveTypes || [], [draft]);
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft || {}) !== JSON.stringify(settings || {}),
@@ -115,6 +135,20 @@ export default function SettingsPage() {
     }));
   };
 
+  const updateFolder = (index, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      folders: (current.folders || []).map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item)
+    }));
+  };
+
+  const updateRoleProfile = (index, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      roles: (current.roles || []).map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item)
+    }));
+  };
+
   const handleAddDepartment = () => {
     const nextIndex = departments.length;
     setDraft((current) => ({ ...current, departments: [...(current.departments || []), { name: '', description: '' }] }));
@@ -124,6 +158,12 @@ export default function SettingsPage() {
     }, 150);
   };
 
+  const handleAddFolder = () => {
+    const nextIndex = folders.length;
+    setDraft((current) => ({ ...current, folders: [...(current.folders || []), { code: '', label: '' }] }));
+    window.setTimeout(() => folderInputRefs.current[nextIndex]?.focus(), 150);
+  };
+
   const handleRemoveDepartment = (index) => {
     const departmentName = departments[index]?.name || 'this department';
     if (!window.confirm(`Remove ${departmentName}?`)) {
@@ -131,6 +171,15 @@ export default function SettingsPage() {
     }
 
     setDraft((current) => ({ ...current, departments: (current.departments || []).filter((_, itemIndex) => itemIndex !== index) }));
+  };
+
+  const handleRemoveFolder = (index) => {
+    const folderLabel = folders[index]?.label || folders[index]?.code || 'this folder';
+    if (!window.confirm(`Remove ${folderLabel}?`)) {
+      return;
+    }
+
+    setDraft((current) => ({ ...current, folders: (current.folders || []).filter((_, itemIndex) => itemIndex !== index) }));
   };
 
   const openLeaveTypeEditor = (index = null) => {
@@ -194,17 +243,47 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     const normalizedDepartments = (draft.departments || []).filter((department) => department?.name !== 'Human Resources');
+    const normalizedFolders = (draft.folders || []).reduce((accumulator, folder) => {
+      const code = String(folder?.code || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      const label = String(folder?.label || '').trim();
+      if (!code || !label || accumulator.some((item) => item.code === code)) {
+        return accumulator;
+      }
+      accumulator.push({ code, label });
+      return accumulator;
+    }, []);
     const payload = isCeoOnly
       ? {
           departments: normalizedDepartments,
+          roles: (draft.roles || []).map((role) => ({
+            key: role.key,
+            label: String(role.label || '').trim() || role.key,
+            permissions: Array.isArray(role.permissions)
+              ? role.permissions.map((permission) => String(permission || '').trim()).filter(Boolean)
+              : []
+          })),
+          folders: normalizedFolders,
           leaveTypes: draft.leaveTypes,
           labels: {
             employeeDirectoryTitle: draft.labels?.employeeDirectoryTitle || '',
             employeeDirectorySubtitle: draft.labels?.employeeDirectorySubtitle || '',
-            leaveModuleTitle: draft.labels?.leaveModuleTitle || ''
+            leaveModuleTitle: draft.labels?.leaveModuleTitle || '',
+            documentsModuleTitle: draft.labels?.documentsModuleTitle || '',
+            documentsSubtitle: draft.labels?.documentsSubtitle || ''
           }
         }
-      : { ...draft, departments: normalizedDepartments };
+      : {
+          ...draft,
+          departments: normalizedDepartments,
+          roles: (draft.roles || []).map((role) => ({
+            key: role.key,
+            label: String(role.label || '').trim() || role.key,
+            permissions: Array.isArray(role.permissions)
+              ? role.permissions.map((permission) => String(permission || '').trim()).filter(Boolean)
+              : []
+          })),
+          folders: normalizedFolders
+        };
 
     const nextSettings = await updateSettings(payload);
     replaceSettings(nextSettings);
@@ -262,8 +341,8 @@ export default function SettingsPage() {
       </SectionCard>
 
       {!isCeoOnly && activePage === 'branding' ? (
-        <div className="grid gap-6 xl:grid-cols-2">
-          <SectionCard title="Branding and theme" subtitle="These values control logos, gradients, cards, buttons, and main theme colors.">
+        <div className="space-y-6">
+          <SectionCard title="Branding and theme - Desktop" subtitle="These values control logos, gradients, cards, buttons, and main theme colors on larger screens.">
             <div className="space-y-5">
               <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
                 <input type="checkbox" className="mt-1" checked={draft.branding?.useDesktopColorsOnMobile !== false} onChange={(event) => setBrandingBoolean('useDesktopColorsOnMobile', event.target.checked)} />
@@ -287,42 +366,30 @@ export default function SettingsPage() {
                 ['gradientFrom', 'Gradient From'],
                 ['gradientTo', 'Gradient To']
               ].map(([key, label]) => (
-                <div key={key}>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
-                  <input value={draft.branding?.[key] || ''} onChange={(event) => setBranding(key, event.target.value)} />
-                </div>
+                <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={key.toLowerCase().includes('color') || key.toLowerCase().includes('gradient')} />
               ))}
               </div>
-
-              {draft.branding?.useDesktopColorsOnMobile === false ? (
-                <div>
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Mobile colors</h3>
-                    <p className="mt-1 text-xs text-slate-500">These colors apply on smaller screens while desktop colors stay unchanged.</p>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {[
-                      ['mobilePrimaryColor', 'Mobile Primary Color'],
-                      ['mobileSecondaryColor', 'Mobile Secondary Color'],
-                      ['mobileAccentColor', 'Mobile Accent Color'],
-                      ['mobileBackgroundColor', 'Mobile Background Color'],
-                      ['mobileCardColor', 'Mobile Card Color'],
-                      ['mobileTextColor', 'Mobile Text Color'],
-                      ['mobileGradientFrom', 'Mobile Gradient From'],
-                      ['mobileGradientTo', 'Mobile Gradient To']
-                    ].map(([key, label]) => (
-                      <div key={key}>
-                        <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
-                        <input value={draft.branding?.[key] || ''} onChange={(event) => setBranding(key, event.target.value)} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </SectionCard>
 
-          <SectionCard title="Brand preview" subtitle="Quick visual preview of your current logo and theme settings.">
+          <SectionCard title="Branding and theme - Mobile phone" subtitle="These colors apply on smaller screens when desktop colors on phones is turned off.">
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                ['mobilePrimaryColor', 'Mobile Primary Color'],
+                ['mobileSecondaryColor', 'Mobile Secondary Color'],
+                ['mobileAccentColor', 'Mobile Accent Color'],
+                ['mobileBackgroundColor', 'Mobile Background Color'],
+                ['mobileCardColor', 'Mobile Card Color'],
+                ['mobileTextColor', 'Mobile Text Color'],
+                ['mobileGradientFrom', 'Mobile Gradient From'],
+                ['mobileGradientTo', 'Mobile Gradient To']
+              ].map(([key, label]) => (
+                <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker />
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Brand preview" subtitle="Quick visual preview of your current desktop and mobile theme settings.">
             <div className="space-y-4">
               <div className="rounded-[2rem] p-6 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.gradientTo || '#22c55e'})` }}>
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold">
@@ -332,13 +399,11 @@ export default function SettingsPage() {
                 <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
               </div>
 
-              {draft.branding?.useDesktopColorsOnMobile === false ? (
-                <div className="max-w-xs rounded-[2rem] p-5 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.mobileGradientFrom || draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.mobileGradientTo || draft.branding?.gradientTo || '#22c55e'})` }}>
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/70">Mobile preview</p>
-                  <h3 className="mt-4 text-xl font-semibold">{draft.branding?.organizationName || 'KEREA'}</h3>
-                  <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
-                </div>
-              ) : null}
+              <div className="max-w-xs rounded-[2rem] p-5 text-white shadow-soft" style={{ background: `linear-gradient(135deg, ${draft.branding?.mobileGradientFrom || draft.branding?.gradientFrom || '#14532d'}, ${draft.branding?.mobileGradientTo || draft.branding?.gradientTo || '#22c55e'})` }}>
+                <p className="text-xs uppercase tracking-[0.3em] text-white/70">Mobile preview</p>
+                <h3 className="mt-4 text-xl font-semibold">{draft.branding?.organizationName || 'KEREA'}</h3>
+                <p className="mt-2 text-sm text-white/80">{draft.branding?.appName || 'KEREA HRMS'}</p>
+              </div>
             </div>
           </SectionCard>
         </div>
@@ -385,13 +450,11 @@ export default function SettingsPage() {
 
       {!isCeoOnly && activePage === 'login' ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr),minmax(360px,0.9fr)]">
-          <SectionCard title="Login page controls" subtitle="Edit the login page text, button label, footer text, and core visual identity.">
+          <div className="space-y-6">
+          <SectionCard title="Login page controls - Desktop" subtitle="Edit the login page text, button label, footer text, and desktop visual identity.">
             <div className="grid gap-4 md:grid-cols-2">
               {LOGIN_PAGE_KEYS.map((key) => (
-                <div key={key}>
-                  <label className="mb-2 block text-sm font-medium capitalize text-slate-700">{key}</label>
-                  <input value={draft.labels?.[key] || ''} onChange={(event) => setLabel(key, event.target.value)} />
-                </div>
+                <SettingsInput key={key} label={key} value={draft.labels?.[key] || ''} onChange={(value) => setLabel(key, value)} />
               ))}
               {[
                 ['logoText', 'Logo initials'],
@@ -403,13 +466,26 @@ export default function SettingsPage() {
                 ['primaryColor', 'Button color'],
                 ['textColor', 'Text color']
               ].map(([key, label]) => (
-                <div key={key}>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
-                  <input value={draft.branding?.[key] || ''} onChange={(event) => setBranding(key, event.target.value)} />
-                </div>
+                <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={key !== 'logoText' && key !== 'organizationName'} />
               ))}
             </div>
           </SectionCard>
+
+          <SectionCard title="Login page controls - Mobile phone" subtitle="Edit the mobile login colors that apply when phone colors differ from desktop.">
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                ['mobileBackgroundColor', 'Mobile Page Background'],
+                ['mobileCardColor', 'Mobile Card Background'],
+                ['mobileGradientFrom', 'Mobile Gradient From'],
+                ['mobileGradientTo', 'Mobile Gradient To'],
+                ['mobilePrimaryColor', 'Mobile Button Color'],
+                ['mobileTextColor', 'Mobile Text Color']
+              ].map(([key, label]) => (
+                <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker />
+              ))}
+            </div>
+          </SectionCard>
+          </div>
 
           <SectionCard title="Login preview" subtitle="Preview the editable login content for KH, email, password, button, and footer.">
             <div className="rounded-[2rem] p-6 shadow-soft" style={{ background: draft.branding?.cardColor || '#ffffff' }}>
@@ -432,25 +508,39 @@ export default function SettingsPage() {
       ) : null}
 
       {!isCeoOnly && activePage === 'navigation' ? (
-        <SectionCard title="Navigation and menu" subtitle="Edit sidebar labels and menu gradients.">
-          <div className="grid gap-4 md:grid-cols-2">
-            {[
-              ['gradientFrom', 'Menu Gradient From', 'branding'],
-              ['gradientTo', 'Menu Gradient To', 'branding'],
-              ['navigationDashboard', 'Dashboard Label', 'labels'],
-              ['navigationEmployees', 'Employees Label', 'labels'],
-              ['navigationLeaves', 'Leaves Label', 'labels'],
-              ['navigationDocuments', 'Documents Label', 'labels'],
-              ['navigationSettings', 'Settings Label', 'labels'],
-              ['navigationAudit', 'Audit Label', 'labels']
-            ].map(([key, label, source]) => (
-              <div key={key}>
-                <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
-                <input value={source === 'labels' ? draft.labels?.[key] || '' : draft.branding?.[key] || ''} onChange={(event) => (source === 'labels' ? setLabel(key, event.target.value) : setBranding(key, event.target.value))} />
-              </div>
-            ))}
-          </div>
-        </SectionCard>
+        <div className="space-y-6">
+          <SectionCard title="Navigation and menu - Desktop" subtitle="Edit sidebar labels and menu gradients on larger screens.">
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                ['gradientFrom', 'Menu Gradient From', 'branding', true],
+                ['gradientTo', 'Menu Gradient To', 'branding', true],
+                ['navigationDashboard', 'Dashboard Label', 'labels', false],
+                ['navigationEmployees', 'Employees Label', 'labels', false],
+                ['navigationLeaves', 'Leaves Label', 'labels', false],
+                ['navigationDocuments', 'Documents Label', 'labels', false],
+                ['navigationSettings', 'Settings Label', 'labels', false],
+                ['navigationAudit', 'Audit Label', 'labels', false]
+              ].map(([key, label, source, colorPicker]) => (
+                <SettingsInput key={key} label={label} value={source === 'labels' ? draft.labels?.[key] || '' : draft.branding?.[key] || ''} onChange={(value) => (source === 'labels' ? setLabel(key, value) : setBranding(key, value))} colorPicker={colorPicker} />
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Navigation and menu - Mobile phone" subtitle="Edit the mobile open and close menu button styles.">
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                ['mobileMenuOpenBackgroundColor', 'Hamburger Background', true],
+                ['mobileMenuOpenTextColor', 'Hamburger Icon Color', true],
+                ['mobileMenuOpenBorderColor', 'Hamburger Border Color', true],
+                ['mobileMenuCloseBackgroundColor', 'Close Button Background', true],
+                ['mobileMenuCloseTextColor', 'Close Icon Color', true],
+                ['mobileMenuCloseBorderColor', 'Close Border Color', true]
+              ].map(([key, label, colorPicker]) => (
+                <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={colorPicker} />
+              ))}
+            </div>
+          </SectionCard>
+        </div>
       ) : null}
 
       {activePage === 'employees' ? (
@@ -458,7 +548,7 @@ export default function SettingsPage() {
           <div ref={employeesSectionRef}>
           <SectionCard
             title="Employees page"
-            subtitle="Manage department sections, employee page labels, and jump to employee management."
+            subtitle="Manage department sections, role profiles, employee page labels, and jump to employee management."
             actions={[
               <button
                 key="open-users"
@@ -508,6 +598,33 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
+
+              <div className="pt-2">
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold text-slate-900">Role profiles</h3>
+                  <p className="mt-1 text-sm text-slate-500">Edit labels and permission notes for the built-in system roles shown in the Role dropdown.</p>
+                </div>
+                <div className="space-y-4">
+                  {roles.map((role, index) => (
+                    <div key={role.key} className="rounded-2xl border border-slate-200 p-4">
+                      <div className="grid gap-4 md:grid-cols-[180px,minmax(0,1fr),minmax(0,1.6fr)]">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">System key</label>
+                          <input value={role.key} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">Role label</label>
+                          <input value={role.label || ''} onChange={(event) => updateRoleProfile(index, 'label', event.target.value)} />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">Permissions</label>
+                          <textarea rows="4" value={Array.isArray(role.permissions) ? role.permissions.join('\n') : ''} onChange={(event) => updateRoleProfile(index, 'permissions', event.target.value.split('\n'))} placeholder="One permission per line" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </SectionCard>
           </div>
@@ -549,19 +666,52 @@ export default function SettingsPage() {
         </SectionCard>
       ) : null}
 
-      {!isCeoOnly && activePage === 'documents' ? (
-        <SectionCard title="Documents page" subtitle="Edit the documents page heading and helper text.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">Documents title</label>
-              <input value={draft.labels?.documentsModuleTitle || ''} onChange={(event) => setLabel('documentsModuleTitle', event.target.value)} />
+      {activePage === 'documents' ? (
+        <div className="space-y-6">
+          <SectionCard title="Documents page" subtitle="Edit the documents page heading, helper text, and available folder types.">
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <SettingsInput label="Documents title" value={draft.labels?.documentsModuleTitle || ''} onChange={(value) => setLabel('documentsModuleTitle', value)} />
+                <div className="md:col-span-2">
+                  <SettingsInput label="Documents subtitle" value={draft.labels?.documentsSubtitle || ''} onChange={(value) => setLabel('documentsSubtitle', value)} />
+                </div>
+              </div>
             </div>
-            <div className="md:col-span-2">
-              <label className="mb-2 block text-sm font-medium text-slate-700">Documents subtitle</label>
-              <input value={draft.labels?.documentsSubtitle || ''} onChange={(event) => setLabel('documentsSubtitle', event.target.value)} />
+          </SectionCard>
+
+          <SectionCard title="Folder types" subtitle="Create the folder types that appear in the document upload dropdown." actions={[
+            <button
+              key="add-folder"
+              type="button"
+              onClick={handleAddFolder}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700"
+            >
+              Add Folder
+            </button>
+          ]}>
+            <div className="space-y-4">
+              {folders.map((folder, index) => (
+                <div key={`${folder.code}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),120px]">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Code</label>
+                      <input ref={(element) => { folderInputRefs.current[index] = element; }} value={folder.code || ''} onChange={(event) => updateFolder(index, 'code', event.target.value)} placeholder="e.g. payroll" />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Label</label>
+                      <input value={folder.label || ''} onChange={(event) => updateFolder(index, 'label', event.target.value)} placeholder="e.g. Payroll" />
+                    </div>
+                    <div className="flex items-end">
+                      <button type="button" className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700" onClick={() => handleRemoveFolder(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        </SectionCard>
+          </SectionCard>
+        </div>
       ) : null}
 
       {activePage === 'leave' ? (

@@ -65,6 +65,8 @@ const getSystemSettings = async () => {
   return {
     ...mergedPayload,
     departments: departments.length ? departments : defaultSettings.departments,
+    roles: Array.isArray(mergedPayload.roles) && mergedPayload.roles.length ? mergedPayload.roles : defaultSettings.roles,
+    folders: Array.isArray(mergedPayload.folders) && mergedPayload.folders.length ? mergedPayload.folders : defaultSettings.folders,
     leaveTypes: leaveTypes.length ? leaveTypes : defaultSettings.leaveTypes
   };
 };
@@ -114,7 +116,7 @@ const normalizeUpdatesByRole = (currentUser, updates = {}) => {
     return updates;
   }
 
-  const allowedLabelKeys = ['leaveModuleTitle', 'employeeDirectoryTitle', 'employeeDirectorySubtitle'];
+  const allowedLabelKeys = ['leaveModuleTitle', 'employeeDirectoryTitle', 'employeeDirectorySubtitle', 'documentsModuleTitle', 'documentsSubtitle'];
   const labels = allowedLabelKeys.reduce((acc, key) => {
     if (updates.labels && Object.prototype.hasOwnProperty.call(updates.labels, key)) {
       acc[key] = updates.labels[key];
@@ -125,6 +127,8 @@ const normalizeUpdatesByRole = (currentUser, updates = {}) => {
 
   return {
     departments: Array.isArray(updates.departments) ? updates.departments : undefined,
+    roles: Array.isArray(updates.roles) ? updates.roles : undefined,
+    folders: Array.isArray(updates.folders) ? updates.folders : undefined,
     leaveTypes: Array.isArray(updates.leaveTypes) ? updates.leaveTypes : undefined,
     labels: Object.keys(labels).length ? labels : undefined
   };

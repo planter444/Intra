@@ -27,7 +27,7 @@ export default function ProfilePage() {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordVisibility, setPasswordVisibility] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
   const canEditFullProfile = user?.role === 'ceo';
-  const isProfileEditable = canEditFullProfile ? isEditingProfile : true;
+  const isProfileEditable = isEditingProfile;
 
   useEffect(() => {
     if (!user?.id) {
@@ -181,7 +181,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
-        <SectionCard title="Personal information" subtitle="Changes are stored securely and governed by backend permissions." actions={canEditFullProfile ? [
+        <SectionCard title="Personal information" subtitle="Changes are stored securely and governed by backend permissions." actions={[
           isEditingProfile ? (
             <button key="cancel-edit" type="button" className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={handleCancelEditing}>
               Cancel edit
@@ -191,19 +191,19 @@ export default function ProfilePage() {
               <span className="inline-flex items-center gap-2"><Pencil size={16} />Edit</span>
             </button>
           )
-        ] : undefined}>
+        ]}>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">First name</label>
-              <input value={form.firstName} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))} />
+              <input value={form.firstName} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Last name</label>
-              <input value={form.lastName} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))} />
+              <input value={form.lastName} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Email</label>
-              <input type="email" value={form.email} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+              <input type="email" value={form.email} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Phone</label>
@@ -211,7 +211,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Gender</label>
-              <select value={form.gender} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}>
+              <select value={form.gender} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}>
                 <option value="">Not set</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
@@ -220,10 +220,10 @@ export default function ProfilePage() {
             </div>
             <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-medium text-slate-700">Position title</label>
-              <input value={form.positionTitle} disabled={!isProfileEditable} className={!isProfileEditable ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''} onChange={(event) => setForm((current) => ({ ...current, positionTitle: event.target.value }))} />
+              <input value={form.positionTitle} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" onChange={(event) => setForm((current) => ({ ...current, positionTitle: event.target.value }))} />
             </div>
             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-              {!canEditFullProfile || isEditingProfile ? (
+              {isEditingProfile ? (
                 <button type="submit" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg">
                   Save profile
                 </button>

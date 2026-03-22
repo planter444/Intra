@@ -32,10 +32,32 @@ const getFilenameFromDisposition = (contentDisposition) => {
   return match?.[1] || 'document';
 };
 
+const normalizeDocumentRequestError = async (error) => {
+  const responseData = error.response?.data;
+  if (responseData instanceof Blob) {
+    const text = await responseData.text();
+
+    try {
+      const payload = JSON.parse(text);
+      if (payload?.message) {
+        error.message = payload.message;
+      }
+    } catch {
+      if (text) {
+        error.message = text;
+      }
+    }
+  } else if (error.response?.data?.message) {
+    error.message = error.response.data.message;
+  }
+
+  throw error;
+};
+
 const fetchDocumentBlob = async (documentId, preview = false) => {
   const { data, headers } = await api.get(`/documents/${documentId}/download${preview ? '?preview=true' : ''}`, {
     responseType: 'blob'
-  });
+  }).catch(normalizeDocumentRequestError);
 
   return {
     blob: data,

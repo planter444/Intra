@@ -35,8 +35,19 @@ export default function DocumentsPage() {
   const [seenDocumentIds, setSeenDocumentIds] = useState([]);
   const [seenIdsReady, setSeenIdsReady] = useState(user.role !== 'ceo');
   const canManageEmployeeDocuments = user.role === 'hr' || user.role === 'ceo';
+  const folderOptions = useMemo(
+    () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
+    [settings?.folders]
+  );
 
   useUnsavedChangesGuard(Boolean(uploadState.file || uploadState.employeeName || uploadState.userId));
+
+  useEffect(() => {
+    const defaultFolderCode = folderOptions[0]?.code || 'id';
+    if (!folderOptions.some((folder) => folder.code === uploadState.folderType)) {
+      setUploadState((current) => ({ ...current, folderType: defaultFolderCode }));
+    }
+  }, [folderOptions, uploadState.folderType]);
 
   const employeeMatch = useMemo(
     () => employees.find((employee) => employee.fullName.toLowerCase() === uploadState.employeeName.trim().toLowerCase()),
@@ -222,6 +233,24 @@ export default function DocumentsPage() {
     }
   };
 
+  const handlePreview = async (documentId) => {
+    try {
+      await previewDocument(documentId);
+    } catch (error) {
+      setMessageTone('error');
+      setMessage(error.message || 'Unable to preview this document right now.');
+    }
+  };
+
+  const handleDownload = async (documentId) => {
+    try {
+      await downloadDocument(documentId);
+    } catch (error) {
+      setMessageTone('error');
+      setMessage(error.message || 'Unable to download this document right now.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -232,7 +261,7 @@ export default function DocumentsPage() {
       {message ? <div className={`rounded-2xl px-4 py-3 text-sm ${messageTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{message}</div> : null}
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr,1.5fr]">
-        <SectionCard title="Upload document" subtitle="Folders: id, contracts, certificates, and other.">
+        <SectionCard title="Upload document" subtitle={`Folders: ${(folderOptions.length ? folderOptions.map((folder) => folder.label).join(', ') : 'No folders configured yet')}.`}>
           <form className="space-y-4" onSubmit={handleUpload}>
             {canManageEmployeeDocuments ? (
               <div>
@@ -248,10 +277,9 @@ export default function DocumentsPage() {
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Folder type</label>
               <select value={uploadState.folderType} onChange={(event) => setUploadState((current) => ({ ...current, folderType: event.target.value }))}>
-                <option value="id">ID</option>
-                <option value="contracts">Contracts</option>
-                <option value="certificates">Certificates</option>
-                <option value="other">Other</option>
+                {folderOptions.map((folder) => (
+                  <option key={folder.code} value={folder.code}>{folder.label}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -329,10 +357,10 @@ export default function DocumentsPage() {
                     header: 'Actions',
                     render: (row) => (
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={() => previewDocument(row.id)}>
+                        <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={() => handlePreview(row.id)}>
                           Preview
                         </button>
-                        <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={() => downloadDocument(row.id)}>
+                        <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={() => handleDownload(row.id)}>
                           Download
                         </button>
                         {canManageEmployeeDocuments ? (
