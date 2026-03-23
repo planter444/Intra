@@ -145,7 +145,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-[230px] max-w-[88vw] transform px-4 py-5 text-white shadow-2xl transition-all md:static md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:static md:min-h-screen md:self-stretch md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <BrandLogo
@@ -166,13 +166,13 @@ export default function AppLayout({ children }) {
             </button>
           </div>
 
-          <div className="mt-6 rounded-3xl bg-white/10 p-4 backdrop-blur-sm">
+          <div className="mt-8 rounded-3xl bg-white/10 p-4 backdrop-blur-sm">
             <p className="text-xs uppercase tracking-wide text-white/50">Signed in as</p>
             <p className="mt-2 text-lg font-semibold">{user?.fullName}</p>
             <p className="text-sm text-white/70">{roleDisplay} · {user?.departmentName || 'KEREA'}</p>
           </div>
 
-          <nav className="mt-6 space-y-1.5">
+          <nav className="mt-8 space-y-2">
             {navigation.map((item) => {
               const Icon = iconMap[item.key] || User;
 
@@ -181,7 +181,7 @@ export default function AppLayout({ children }) {
                   key={item.key}
                   to={item.path}
                   onClick={closeMobile}
-                  className={({ isActive }) => `flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-emerald-900 shadow-lg' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
+                  className={({ isActive }) => `flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-emerald-900 shadow-lg' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="w-4 text-center"><Icon size={16} /></span>
@@ -203,7 +203,7 @@ export default function AppLayout({ children }) {
 
           <button
             onClick={logout}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
           >
             <LogOut size={16} />
             Logout
