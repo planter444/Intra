@@ -1,7 +1,6 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
@@ -42,6 +41,7 @@ const iconMap = {
 const defaultNavigationByRole = {
   employee: ['dashboard', 'profile', 'leaves', 'documents'],
   supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
+  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   admin: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'audit'],
   ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings']
 };
@@ -52,41 +52,19 @@ export default function AppLayout({ children }) {
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const location = useLocation();
-  const roleDisplay = user?.roleTitle || (user?.role ? user.role.toUpperCase() : '');
-  const mobileButtonBackground = settings?.branding?.mobileMenuOpenBackgroundColor
-    || (settings?.branding?.useDesktopColorsOnMobile === false
-      ? settings?.branding?.mobilePrimaryColor || settings?.branding?.primaryColor
-      : settings?.branding?.primaryColor)
-    || '#166534';
-  const mobileCloseButtonBackground = settings?.branding?.mobileMenuCloseBackgroundColor
-    || (settings?.branding?.useDesktopColorsOnMobile === false
-      ? settings?.branding?.mobilePrimaryColor || settings?.branding?.primaryColor
-      : settings?.branding?.primaryColor)
-    || 'rgba(255,255,255,0.1)';
-  const mobileMenuAnimationType = settings?.interface?.mobileMenuAnimationType || 'slide';
-  const mobileMenuAnimationEnabled = settings?.interface?.mobileMenuAnimationEnabled !== false;
-  const mobileMenuAnimationDuration = Math.min(1200, Math.max(120, Number(settings?.interface?.mobileMenuAnimationDurationMs || 260)));
+  const roleDisplay = user?.role === 'hr' || user?.role === 'ceo'
+    ? 'CEO'
+    : user?.role?.toUpperCase();
   const mobileMenuOpenStyle = {
-    backgroundColor: mobileButtonBackground,
+    backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
     color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
     borderColor: settings?.branding?.mobileMenuOpenBorderColor || '#e2e8f0'
   };
   const mobileMenuCloseStyle = {
-    backgroundColor: mobileCloseButtonBackground,
+    backgroundColor: settings?.branding?.mobileMenuCloseBackgroundColor || '#166534',
     color: settings?.branding?.mobileMenuCloseTextColor || '#ffffff',
     borderColor: settings?.branding?.mobileMenuCloseBorderColor || '#22c55e'
   };
-  const mobileMenuPanelStyle = {
-    background: `linear-gradient(135deg, ${settings?.branding?.mobileMenuGradientFrom || settings?.branding?.mobileGradientFrom || '#14532d'}, ${settings?.branding?.mobileMenuGradientTo || settings?.branding?.mobileGradientTo || '#22c55e'})`,
-    transitionDuration: `${mobileMenuAnimationDuration}ms`
-  };
-  const mobileMenuPanelClassName = mobileMenuAnimationEnabled
-    ? mobileMenuAnimationType === 'fade'
-      ? (mobileOpen ? 'translate-x-0 opacity-100' : 'translate-x-0 opacity-0 pointer-events-none')
-      : mobileMenuAnimationType === 'scale'
-        ? (mobileOpen ? 'translate-x-0 scale-100 opacity-100' : '-translate-x-full scale-95 opacity-0')
-        : (mobileOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-100')
-    : (mobileOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-100');
 
   const navigation = useMemo(() => {
     const fallbackItems = defaultNavigationByRole[user?.role] || ['dashboard'];
@@ -102,7 +80,7 @@ export default function AppLayout({ children }) {
   }, [settings, user]);
 
   useEffect(() => {
-    if (!['supervisor', 'admin', 'ceo'].includes(user?.role)) {
+    if (!['supervisor', 'hr', 'ceo'].includes(user?.role)) {
       setPendingReviewCount(0);
       return;
     }
@@ -143,27 +121,21 @@ export default function AppLayout({ children }) {
   const closeMobile = () => setMobileOpen(false);
 
   return (
-    <div className="min-h-screen w-full bg-surface-page text-text-primary">
-      <div className="min-h-screen w-full overflow-x-hidden">
-        {/* Deployed no-gap layout attempt: keep the desktop sidebar fixed directly to the viewport edges. */}
-        <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[88vw] transform flex-col overflow-hidden px-5 py-6 text-white shadow-2xl transition-all md:shadow-none md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
+    <div className="min-h-screen bg-surface-page text-text-primary">
+      <div className="flex min-h-screen overflow-x-hidden">
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:static md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
-              <BrandLogo
-                logoUrl={settings?.branding?.faviconUrl}
-                fallbackText={settings?.branding?.logoText || 'KH'}
-                alt={`${settings?.branding?.organizationName || 'KEREA'} logo`}
-                className="h-12 w-12"
-                imageClassName="h-full w-full object-contain p-2"
-                surfaceClassName="bg-white/12 backdrop-blur-sm"
-              />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient font-bold text-white shadow-lg">
+                {settings?.branding?.logoText || 'KH'}
+              </div>
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/60">{settings?.branding?.organizationName || 'KEREA'}</p>
                 <h1 className="truncate text-lg font-semibold">{settings?.branding?.appName || 'HRMS'}</h1>
               </div>
             </Link>
-            <button className="rounded-2xl border p-3 shadow-md md:hidden" style={mobileMenuCloseStyle} onClick={closeMobile}>
-              <X size={22} />
+            <button className="rounded-xl border p-2 shadow-md md:hidden" style={mobileMenuCloseStyle} onClick={closeMobile}>
+              <X size={18} />
             </button>
           </div>
 
@@ -173,8 +145,7 @@ export default function AppLayout({ children }) {
             <p className="text-sm text-white/70">{roleDisplay} · {user?.departmentName || 'KEREA'}</p>
           </div>
 
-          {/* Menu scroll fix: allow the menu list to scroll inside the full-height sidebar. */}
-          <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+          <nav className="mt-8 space-y-2">
             {navigation.map((item) => {
               const Icon = iconMap[item.key] || User;
 
@@ -205,24 +176,23 @@ export default function AppLayout({ children }) {
 
           <button
             onClick={logout}
-            className="mt-8 flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
           >
             <LogOut size={16} />
             Logout
           </button>
         </aside>
 
-        {/* Deployed no-gap layout attempt: offset desktop page content by the fixed sidebar width. */}
-        <div className="app-layout-desktop-offset flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
-                  className="rounded-2xl border p-3 shadow-md md:hidden"
+                  className="rounded-2xl border p-2 shadow-md md:hidden"
                   style={mobileMenuOpenStyle}
                   onClick={() => setMobileOpen((current) => !current)}
                 >
-                  <Menu size={24} />
+                  <Menu size={18} />
                 </button>
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-400">KEREA intranet</p>
