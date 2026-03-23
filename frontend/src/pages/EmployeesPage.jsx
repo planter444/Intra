@@ -108,7 +108,7 @@ export default function EmployeesPage() {
     return [...privilegedRoleOptions, ...employeeTitleOptions];
   }, [settings?.roleTitles]);
   const supervisorOptions = useMemo(
-    () => users.filter((candidate) => candidate.isActive && !candidate.isDeleted && ['supervisor', 'admin', 'ceo'].includes(candidate.role)),
+    () => users.filter((candidate) => candidate.isActive && !candidate.isDeleted),
     [users]
   );
 

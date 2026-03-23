@@ -733,7 +733,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               {departments.map((department, index) => (
-                <div key={`${department.name}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                <div key={department.id || `department-${index}`} className="rounded-2xl border border-slate-200 p-4">
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),120px]">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700">Name</label>
