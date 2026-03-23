@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Eye, Trash2 } from 'lucide-react';
+import { ArrowLeft, Eye, Trash2, X } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { fetchUsers } from '../services/userService';
-import { deleteDocument, downloadDocument, fetchDocuments, openDocumentInNewTab, previewDocument, uploadDocument } from '../services/documentService';
+import { deleteDocument, downloadDocument, fetchDocumentBlob, fetchDocuments, openDocumentInNewTab, uploadDocument } from '../services/documentService';
 
 const SEEN_DOCUMENT_IDS_KEY = 'kerea_hrms_seen_document_ids';
 const getSeenDocumentIdsStorageKey = (userId) => `${SEEN_DOCUMENT_IDS_KEY}_${userId}`;
@@ -22,6 +22,7 @@ const getDocumentTypeLabel = (document) => {
 };
 
 const formatDocumentSizeMb = (size) => `${Math.max(1, Math.round(Number(size || 0) / (1024 * 1024) || 0))} MB`;
+const createEmptyPreviewState = () => ({ open: false, loading: false, objectUrl: '', fileName: '', mimeType: '', documentId: '', error: '' });
 
 export default function DocumentsPage() {
   const { user, settings } = useAuth();
@@ -34,7 +35,8 @@ export default function DocumentsPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [seenDocumentIds, setSeenDocumentIds] = useState([]);
   const [seenIdsReady, setSeenIdsReady] = useState(user.role !== 'ceo');
-  const canManageEmployeeDocuments = user.role === 'admin' || user.role === 'ceo';
+  const [previewState, setPreviewState] = useState(createEmptyPreviewState);
+  const canManageEmployeeDocuments = user.role === 'ceo';
   const folderOptions = useMemo(
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
     [settings?.folders]
@@ -95,6 +97,12 @@ export default function DocumentsPage() {
     localStorage.setItem(getSeenDocumentIdsStorageKey(user.id), JSON.stringify(seenDocumentIds));
     window.dispatchEvent(new Event('documents-seen-updated'));
   }, [seenDocumentIds, seenIdsReady, user.id, user.role]);
+
+  useEffect(() => () => {
+    if (previewState.objectUrl) {
+      URL.revokeObjectURL(previewState.objectUrl);
+    }
+  }, [previewState.objectUrl]);
 
   const handleUpload = async (event) => {
     event.preventDefault();
@@ -233,12 +241,55 @@ export default function DocumentsPage() {
     }
   };
 
-  const handlePreview = async (documentId) => {
+  const closePreview = () => {
+    setPreviewState((current) => {
+      if (current.objectUrl) {
+        URL.revokeObjectURL(current.objectUrl);
+      }
+
+      return createEmptyPreviewState();
+    });
+  };
+
+  const handlePreview = async (document) => {
+    setPreviewState((current) => {
+      if (current.objectUrl) {
+        URL.revokeObjectURL(current.objectUrl);
+      }
+
+      return {
+        open: true,
+        loading: true,
+        objectUrl: '',
+        fileName: document.fileName,
+        mimeType: document.mimeType,
+        documentId: document.id,
+        error: ''
+      };
+    });
+
     try {
-      await previewDocument(documentId);
+      const { blob } = await fetchDocumentBlob(document.id, true);
+      const objectUrl = URL.createObjectURL(blob);
+      setPreviewState({
+        open: true,
+        loading: false,
+        objectUrl,
+        fileName: document.fileName,
+        mimeType: blob.type || document.mimeType,
+        documentId: document.id,
+        error: ''
+      });
     } catch (error) {
-      setMessageTone('error');
-      setMessage(error.message || 'Unable to preview this document right now.');
+      setPreviewState({
+        open: true,
+        loading: false,
+        objectUrl: '',
+        fileName: document.fileName,
+        mimeType: document.mimeType,
+        documentId: document.id,
+        error: error.message || 'Unable to preview this document right now.'
+      });
     }
   };
 
@@ -254,6 +305,10 @@ export default function DocumentsPage() {
   const handleOpenDocument = (documentId) => {
     openDocumentInNewTab(documentId);
   };
+
+  const previewIsImage = previewState.mimeType.startsWith('image/');
+  const previewIsPdf = previewState.mimeType === 'application/pdf';
+  const previewIsVideo = previewState.mimeType.startsWith('video/');
 
   return (
     <div className="space-y-6">
@@ -296,7 +351,7 @@ export default function DocumentsPage() {
           </form>
         </SectionCard>
 
-        <SectionCard title="Document repository" subtitle={selectedFolder ? `Viewing all documents stored for ${selectedFolder.employeeName}.` : 'Open an employee folder to review the documents inside it.'}>
+        <SectionCard title="Document repository" subtitle={canManageEmployeeDocuments ? (selectedFolder ? `Viewing all documents stored for ${selectedFolder.employeeName}.` : 'Open an employee folder to review the documents inside it.') : 'Preview, download, or open your own documents in a new tab.'}>
           {canManageEmployeeDocuments ? (
             <div className="mb-4">
               <label className="mb-2 block text-sm font-medium text-slate-700">Search employee documents</label>
@@ -363,7 +418,7 @@ export default function DocumentsPage() {
                       <div className="flex flex-wrap gap-2">
                         <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(event) => {
                           event.stopPropagation();
-                          handlePreview(row.id);
+                          handlePreview(row);
                         }}>
                           Preview
                         </button>
@@ -396,6 +451,51 @@ export default function DocumentsPage() {
           )}
         </SectionCard>
       </div>
+
+      {previewState.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" onClick={closePreview}>
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-semibold text-slate-900">Preview</h3>
+                <p className="truncate text-sm text-slate-500">{previewState.fileName}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={() => handleDownload(previewState.documentId)}>
+                  Download
+                </button>
+                <button type="button" className="rounded-xl border border-slate-200 p-2 text-slate-600" onClick={closePreview} aria-label="Close preview">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-4 sm:p-5">
+              {previewState.loading ? (
+                <div className="flex h-[70vh] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">Loading preview...</div>
+              ) : previewState.error ? (
+                <div className="flex h-[70vh] flex-col items-center justify-center rounded-3xl border border-dashed border-rose-200 bg-white px-6 text-center text-sm text-rose-700">
+                  <p>{previewState.error}</p>
+                </div>
+              ) : previewIsImage ? (
+                <div className="flex min-h-[70vh] items-center justify-center rounded-3xl bg-white p-4">
+                  <img src={previewState.objectUrl} alt={previewState.fileName} className="max-h-[78vh] max-w-full rounded-2xl object-contain" />
+                </div>
+              ) : previewIsPdf ? (
+                <iframe title={previewState.fileName} src={previewState.objectUrl} className="h-[78vh] w-full rounded-3xl border border-slate-200 bg-white" />
+              ) : previewIsVideo ? (
+                <div className="flex min-h-[70vh] items-center justify-center rounded-3xl bg-white p-4">
+                  <video src={previewState.objectUrl} controls className="max-h-[78vh] w-full rounded-2xl bg-black" />
+                </div>
+              ) : (
+                <div className="flex h-[70vh] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white px-6 text-center text-sm text-slate-500">
+                  <p>This file type cannot be shown inside the popup preview.</p>
+                  <p className="mt-2">Use Download or open the row in a new tab.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

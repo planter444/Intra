@@ -13,6 +13,14 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
 
 const LOGIN_PAGE_KEYS = ['loginTitle', 'loginSubtitle', 'loginEmailLabel', 'loginPasswordLabel', 'loginEmailPlaceholder', 'loginPasswordPlaceholder', 'loginButtonText', 'loginFooterText'];
+const PAGE_PRESENTATION_OPTIONS = [
+  ['fade-up', 'Fade Up'],
+  ['slide-left', 'Slide Left'],
+  ['slide-right', 'Slide Right'],
+  ['zoom-in', 'Zoom In'],
+  ['soft-blur', 'Soft Blur']
+];
+const PAGE_PRESENTATION_KEYS = ['dashboard', 'login', 'employees', 'profile', 'documents', 'leave'];
 const isHexColor = (value) => /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(String(value || '').trim());
 
 function SettingsInput({ label, value, onChange, colorPicker = false }) {
@@ -56,6 +64,7 @@ export default function SettingsPage() {
   const leaveTypeNameInputRef = useRef(null);
   const departmentInputRefs = useRef([]);
   const folderInputRefs = useRef([]);
+  const faviconInputRef = useRef(null);
 
   useEffect(() => {
     if (settings) {
@@ -96,6 +105,47 @@ export default function SettingsPage() {
         [key]: value
       }
     }));
+  };
+
+  const setPageExperienceField = (pageKey, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      interface: {
+        ...current.interface,
+        pageExperience: {
+          ...(current.interface?.pageExperience || {}),
+          [pageKey]: {
+            ...(current.interface?.pageExperience?.[pageKey] || {}),
+            [key]: value
+          }
+        }
+      }
+    }));
+  };
+
+  const currentPageExperience = useMemo(
+    () => draft.interface?.pageExperience?.[activePage] || {},
+    [activePage, draft.interface?.pageExperience]
+  );
+
+  const canEditPagePresentation = !isCeoOnly && PAGE_PRESENTATION_KEYS.includes(activePage);
+
+  const handleFaviconUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setBranding('faviconUrl', String(reader.result || ''));
+    reader.readAsDataURL(file);
+  };
+
+  const clearFavicon = () => {
+    setBranding('faviconUrl', '');
+    if (faviconInputRef.current) {
+      faviconInputRef.current.value = '';
+    }
   };
 
   const setBrandingBoolean = (key, value) => {
@@ -273,6 +323,24 @@ export default function SettingsPage() {
       accumulator.push({ code, label });
       return accumulator;
     }, []);
+    const normalizedPageExperience = Object.entries(draft.interface?.pageExperience || {}).reduce((accumulator, [pageKey, config]) => {
+      accumulator[pageKey] = {
+        enabled: config?.enabled !== false,
+        type: PAGE_PRESENTATION_OPTIONS.some(([value]) => value === config?.type) ? config.type : 'fade-up',
+        delayMs: Math.max(0, Number(config?.delayMs || 0)),
+        durationMs: Math.max(120, Number(config?.durationMs || 420)),
+        cardBackgroundColor: String(config?.cardBackgroundColor || '#ffffff').trim() || '#ffffff',
+        cardBackgroundOpacity: Math.min(1, Math.max(0, Number(config?.cardBackgroundOpacity ?? 1)))
+      };
+      return accumulator;
+    }, {});
+    const normalizedInterface = {
+      ...(draft.interface || {}),
+      mobileMenuAnimationEnabled: draft.interface?.mobileMenuAnimationEnabled !== false,
+      mobileMenuAnimationType: ['slide', 'fade', 'scale'].includes(draft.interface?.mobileMenuAnimationType) ? draft.interface.mobileMenuAnimationType : 'slide',
+      mobileMenuAnimationDurationMs: Math.max(120, Number(draft.interface?.mobileMenuAnimationDurationMs || 260)),
+      pageExperience: normalizedPageExperience
+    };
     const payload = isCeoOnly
       ? {
           departments: normalizedDepartments,
@@ -291,7 +359,8 @@ export default function SettingsPage() {
           ...draft,
           departments: normalizedDepartments,
           roleTitles: normalizedRoleTitles,
-          folders: normalizedFolders
+          folders: normalizedFolders,
+          interface: normalizedInterface
         };
 
     const nextSettings = await updateSettings(payload);
@@ -349,6 +418,41 @@ export default function SettingsPage() {
         </div>
       </SectionCard>
 
+      {canEditPagePresentation ? (
+        <SectionCard title="Page load style" subtitle="Choose how this page loads, how long it waits, and the card background color/opacity used on that page.">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
+              <input type="checkbox" className="mt-1" checked={currentPageExperience.enabled !== false} onChange={(event) => setPageExperienceField(activePage, 'enabled', event.target.checked)} />
+              <span>
+                <span className="block font-semibold text-slate-900">Enable on-load style</span>
+                <span className="mt-1 block text-xs text-slate-500">Turn this off if you want the page content to appear instantly.</span>
+              </span>
+            </label>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Style type</label>
+              <select value={currentPageExperience.type || 'fade-up'} onChange={(event) => setPageExperienceField(activePage, 'type', event.target.value)}>
+                {PAGE_PRESENTATION_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Start delay (ms)</label>
+              <input type="number" min="0" max="3000" value={currentPageExperience.delayMs ?? 0} onChange={(event) => setPageExperienceField(activePage, 'delayMs', event.target.value)} />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Animation duration (ms)</label>
+              <input type="number" min="120" max="2000" value={currentPageExperience.durationMs ?? 420} onChange={(event) => setPageExperienceField(activePage, 'durationMs', event.target.value)} />
+            </div>
+            <SettingsInput label="Card Background Color" value={currentPageExperience.cardBackgroundColor || '#ffffff'} onChange={(value) => setPageExperienceField(activePage, 'cardBackgroundColor', value)} colorPicker />
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Card background opacity</label>
+              <input type="number" min="0" max="1" step="0.05" value={currentPageExperience.cardBackgroundOpacity ?? 1} onChange={(event) => setPageExperienceField(activePage, 'cardBackgroundOpacity', event.target.value)} />
+            </div>
+          </div>
+        </SectionCard>
+      ) : null}
+
       {!isCeoOnly && activePage === 'branding' ? (
         <div className="space-y-6">
           <SectionCard title="Branding and theme - Desktop" subtitle="These values control logos, gradients, cards, buttons, and main theme colors on larger screens.">
@@ -366,6 +470,7 @@ export default function SettingsPage() {
                 ['organizationName', 'Organization Name'],
                 ['appName', 'Application Name'],
                 ['logoText', 'Logo Text'],
+                ['faviconUrl', 'Tab Logo URL'],
                 ['primaryColor', 'Primary Color'],
                 ['secondaryColor', 'Secondary Color'],
                 ['accentColor', 'Accent Color'],
@@ -377,6 +482,24 @@ export default function SettingsPage() {
               ].map(([key, label]) => (
                 <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={key.toLowerCase().includes('color') || key.toLowerCase().includes('gradient')} />
               ))}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Tab logo upload</h3>
+                    <p className="mt-1 text-sm text-slate-500">Upload an image for the browser tab icon, or paste a direct image URL above.</p>
+                  </div>
+                  {draft.branding?.faviconUrl ? (
+                    <img src={draft.branding.faviconUrl} alt="Tab logo preview" className="h-10 w-10 rounded-lg border border-slate-200 bg-white object-contain p-1" />
+                  ) : null}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <input ref={faviconInputRef} type="file" accept="image/*" onChange={handleFaviconUpload} className="max-w-full text-sm text-slate-600" />
+                  <button type="button" className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={clearFavicon}>
+                    Clear Tab Logo
+                  </button>
+                </div>
               </div>
             </div>
           </SectionCard>
@@ -538,6 +661,8 @@ export default function SettingsPage() {
           <SectionCard title="Navigation and menu - Mobile phone" subtitle="Edit the mobile open and close menu button styles.">
             <div className="grid gap-4 md:grid-cols-2">
               {[
+                ['mobileMenuGradientFrom', 'Menu Gradient From', true],
+                ['mobileMenuGradientTo', 'Menu Gradient To', true],
                 ['mobileMenuOpenBackgroundColor', 'Hamburger Background', true],
                 ['mobileMenuOpenTextColor', 'Hamburger Icon Color', true],
                 ['mobileMenuOpenBorderColor', 'Hamburger Border Color', true],
@@ -547,6 +672,25 @@ export default function SettingsPage() {
               ].map(([key, label, colorPicker]) => (
                 <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={colorPicker} />
               ))}
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
+                <input type="checkbox" className="mt-1" checked={draft.interface?.mobileMenuAnimationEnabled !== false} onChange={(event) => setInterfaceField('mobileMenuAnimationEnabled', event.target.checked)} />
+                <span>
+                  <span className="block font-semibold text-slate-900">Enable menu open and close animation</span>
+                  <span className="mt-1 block text-xs text-slate-500">Turn it off for an instant mobile menu.</span>
+                </span>
+              </label>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Menu animation style</label>
+                <select value={draft.interface?.mobileMenuAnimationType || 'slide'} onChange={(event) => setInterfaceField('mobileMenuAnimationType', event.target.value)}>
+                  <option value="slide">Slide</option>
+                  <option value="fade">Fade</option>
+                  <option value="scale">Scale</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Menu animation duration (ms)</label>
+                <input type="number" min="120" max="1200" value={draft.interface?.mobileMenuAnimationDurationMs ?? 260} onChange={(event) => setInterfaceField('mobileMenuAnimationDurationMs', event.target.value)} />
+              </div>
             </div>
           </SectionCard>
         </div>

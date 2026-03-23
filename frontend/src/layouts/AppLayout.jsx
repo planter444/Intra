@@ -52,16 +52,30 @@ export default function AppLayout({ children }) {
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const location = useLocation();
   const roleDisplay = user?.roleTitle || (user?.role ? user.role.toUpperCase() : '');
+  const mobileMenuAnimationType = settings?.interface?.mobileMenuAnimationType || 'slide';
+  const mobileMenuAnimationEnabled = settings?.interface?.mobileMenuAnimationEnabled !== false;
+  const mobileMenuAnimationDuration = Math.min(1200, Math.max(120, Number(settings?.interface?.mobileMenuAnimationDurationMs || 260)));
   const mobileMenuOpenStyle = {
-    backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
+    background: `linear-gradient(135deg, ${settings?.branding?.mobileMenuGradientFrom || settings?.branding?.mobileGradientFrom || '#14532d'}, ${settings?.branding?.mobileMenuGradientTo || settings?.branding?.mobileGradientTo || '#22c55e'})`,
     color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
     borderColor: settings?.branding?.mobileMenuOpenBorderColor || '#e2e8f0'
   };
   const mobileMenuCloseStyle = {
-    backgroundColor: settings?.branding?.mobileMenuCloseBackgroundColor || '#166534',
+    background: settings?.branding?.mobileMenuCloseBackgroundColor || 'rgba(255,255,255,0.1)',
     color: settings?.branding?.mobileMenuCloseTextColor || '#ffffff',
     borderColor: settings?.branding?.mobileMenuCloseBorderColor || '#22c55e'
   };
+  const mobileMenuPanelStyle = {
+    background: `linear-gradient(135deg, ${settings?.branding?.mobileMenuGradientFrom || settings?.branding?.mobileGradientFrom || '#14532d'}, ${settings?.branding?.mobileMenuGradientTo || settings?.branding?.mobileGradientTo || '#22c55e'})`,
+    transitionDuration: `${mobileMenuAnimationDuration}ms`
+  };
+  const mobileMenuPanelClassName = mobileMenuAnimationEnabled
+    ? mobileMenuAnimationType === 'fade'
+      ? (mobileOpen ? 'translate-x-0 opacity-100' : 'translate-x-0 opacity-0 pointer-events-none')
+      : mobileMenuAnimationType === 'scale'
+        ? (mobileOpen ? 'translate-x-0 scale-100 opacity-100' : '-translate-x-full scale-95 opacity-0')
+        : (mobileOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-100')
+    : (mobileOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-100');
 
   const navigation = useMemo(() => {
     const fallbackItems = defaultNavigationByRole[user?.role] || ['dashboard'];
@@ -120,7 +134,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:static md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:static md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient font-bold text-white shadow-lg">
@@ -131,8 +145,8 @@ export default function AppLayout({ children }) {
                 <h1 className="truncate text-lg font-semibold">{settings?.branding?.appName || 'HRMS'}</h1>
               </div>
             </Link>
-            <button className="rounded-xl border p-2 shadow-md md:hidden" style={mobileMenuCloseStyle} onClick={closeMobile}>
-              <X size={18} />
+            <button className="rounded-2xl border p-3 shadow-md md:hidden" style={mobileMenuCloseStyle} onClick={closeMobile}>
+              <X size={22} />
             </button>
           </div>
 
@@ -185,11 +199,11 @@ export default function AppLayout({ children }) {
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
-                  className="rounded-2xl border p-2 shadow-md md:hidden"
+                  className="rounded-2xl border p-3 shadow-md md:hidden"
                   style={mobileMenuOpenStyle}
                   onClick={() => setMobileOpen((current) => !current)}
                 >
-                  <Menu size={18} />
+                  <Menu size={24} />
                 </button>
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-400">KEREA intranet</p>

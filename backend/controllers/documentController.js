@@ -24,7 +24,7 @@ const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition })
 };
 
 const canAccessUserDocuments = (currentUser, targetUserId) => {
-  if (['admin', 'ceo'].includes(currentUser.role)) {
+  if (currentUser.role === 'ceo') {
     return true;
   }
 
@@ -33,7 +33,7 @@ const canAccessUserDocuments = (currentUser, targetUserId) => {
 
 const listDocuments = async (req, res, next) => {
   try {
-    const targetUserId = req.params.userId || req.query.userId || (['admin', 'ceo'].includes(req.user.role) ? undefined : req.user.id);
+    const targetUserId = req.params.userId || req.query.userId || (req.user.role === 'ceo' ? undefined : req.user.id);
 
     if (targetUserId && !canAccessUserDocuments(req.user, targetUserId)) {
       return res.status(403).json({ message: 'You do not have permission to access these documents.' });
@@ -134,10 +134,6 @@ const downloadDocument = async (req, res, next) => {
         asAttachment: req.query.preview !== 'true'
       });
 
-      if (req.query.preview === 'true') {
-        return res.redirect(remoteUrl);
-      }
-
       await sendRemoteDocument({
         res,
         url: remoteUrl,
@@ -169,6 +165,10 @@ const deleteDocument = async (req, res, next) => {
     }
 
     if (!['admin', 'ceo'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'You do not have permission to delete this document.' });
+    }
+
+    if (req.user.role !== 'ceo' && String(document.userId) !== String(req.user.id)) {
       return res.status(403).json({ message: 'You do not have permission to delete this document.' });
     }
 

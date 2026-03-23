@@ -3,6 +3,7 @@ module.exports = {
     organizationName: 'KEREA',
     appName: 'KEREA HRMS',
     logoText: 'KH',
+    faviconUrl: '',
     primaryColor: '#166534',
     secondaryColor: '#22c55e',
     accentColor: '#86efac',
@@ -20,6 +21,8 @@ module.exports = {
     mobileTextColor: '#0f172a',
     mobileGradientFrom: '#14532d',
     mobileGradientTo: '#22c55e',
+    mobileMenuGradientFrom: '#14532d',
+    mobileMenuGradientTo: '#22c55e',
     mobileMenuOpenBackgroundColor: '#ffffff',
     mobileMenuOpenTextColor: '#475569',
     mobileMenuOpenBorderColor: '#e2e8f0',
@@ -68,7 +71,19 @@ module.exports = {
     showAnnouncements: true,
     showLeaveCalendar: true,
     showDocumentPreview: true,
-    sidebarCollapsedByDefault: false
+    sidebarCollapsedByDefault: false,
+    mobileMenuAnimationEnabled: true,
+    mobileMenuAnimationType: 'slide',
+    mobileMenuAnimationDurationMs: 260,
+    pageExperience: {
+      dashboard: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      employees: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      profile: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      documents: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      leave: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      login: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
+    }
   },
   navigation: {
     employee: ['dashboard', 'profile', 'leaves', 'documents'],

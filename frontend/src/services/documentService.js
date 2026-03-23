@@ -71,7 +71,7 @@ const normalizeDocumentRequestError = async (error) => {
   throw error;
 };
 
-const fetchDocumentBlob = async (documentId, preview = false) => {
+export const fetchDocumentBlob = async (documentId, preview = false) => {
   const { data, headers } = await api.get(`/documents/${documentId}/download${preview ? '?preview=true' : ''}`, {
     responseType: 'blob'
   }).catch(normalizeDocumentRequestError);

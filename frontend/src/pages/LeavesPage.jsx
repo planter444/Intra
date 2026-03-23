@@ -99,7 +99,7 @@ export default function LeavesPage() {
         ))}
       </div>
 
-      <div className={showPersonalHistory ? 'grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
+      <div className={showPersonalHistory && user?.role !== 'supervisor' ? 'grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
         {showPersonalHistory ? (
         <SectionCard title="My leave history" subtitle="Your submitted leave requests and current statuses.">
           {myRequests.length ? (
@@ -126,7 +126,7 @@ export default function LeavesPage() {
         ) : null}
 
         <SectionCard
-          title={user?.role === 'supervisor' || user?.role === 'ceo' || user?.role === 'admin' ? 'Leaves' : 'Leave status tracker'}
+          title={user?.role === 'supervisor' ? 'Team Leaves' : user?.role === 'ceo' || user?.role === 'admin' ? 'Leaves' : 'Leave status tracker'}
           subtitle={user?.role === 'supervisor'
             ? 'Leave requests from employees who report to you.'
             : user?.role === 'ceo' || user?.role === 'admin'

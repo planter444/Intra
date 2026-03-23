@@ -11,6 +11,10 @@ const isRemoteStoragePath = (value) => /^https?:\/\//i.test(String(value || ''))
 const sanitizeFilename = (value) => value.replace(/[^a-zA-Z0-9._-]/g, '_');
 const isCloudinaryEnabled = () => env.mediaStorage === 'cloudinary';
 const normalizeFolderCode = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+const getFileExtension = (fileName = '') => {
+  const segments = String(fileName || '').split('.');
+  return segments.length > 1 ? segments.pop().toLowerCase() : undefined;
+};
 
 const ensureCloudinaryConfigured = () => {
   if (!env.cloudinaryCloudName || !env.cloudinaryApiKey || !env.cloudinaryApiSecret) {
@@ -117,11 +121,10 @@ const saveDocument = async ({ userId, folderType, file }) => {
 };
 
 const getRemoteDocumentUrl = ({ storedName, mimeType, fileName, asAttachment = true }) => {
-  return getCloudinaryClient().url(storedName, {
+  return getCloudinaryClient().utils.private_download_url(storedName, getFileExtension(fileName), {
     resource_type: getCloudinaryResourceType(mimeType),
     type: 'authenticated',
-    sign_url: true,
-    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + 90,
     attachment: asAttachment ? (fileName || true) : undefined
   });
 };

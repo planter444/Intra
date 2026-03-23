@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePagePresentation } from '../hooks/usePagePresentation';
 import { forgotPasswordRequest } from '../services/authService';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, error, loading, settings, isAuthenticated, user } = useAuth();
+  const { animationStyle, cardStyle } = usePagePresentation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [resetNotice, setResetNotice] = useState('');
@@ -53,7 +55,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-brand-gradient px-4 py-8 sm:px-6 lg:px-8">
       <div className="w-full max-w-md">
-        <div className="w-full rounded-[2rem] bg-white p-6 shadow-soft sm:p-8">
+        <div className="w-full rounded-[2rem] bg-white p-6 shadow-soft sm:p-8" style={{ ...cardStyle, ...animationStyle }}>
           <div className="mb-8 text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-gradient text-xl font-bold text-white shadow-lg">
               {settings?.branding?.logoText || 'KH'}

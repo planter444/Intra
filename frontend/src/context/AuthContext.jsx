@@ -36,6 +36,20 @@ const applyBranding = (settings) => {
   root.style.setProperty('--surface-card', resolvedBranding.cardColor || '#ffffff');
   root.style.setProperty('--text-primary', resolvedBranding.textColor || '#0f172a');
   document.title = branding.appName || 'KEREA HRMS';
+
+   const faviconHref = String(branding.faviconUrl || '').trim();
+   let faviconElement = document.querySelector("link[rel='icon']");
+   if (!faviconElement) {
+     faviconElement = document.createElement('link');
+     faviconElement.setAttribute('rel', 'icon');
+     document.head.appendChild(faviconElement);
+   }
+
+   if (faviconHref) {
+     faviconElement.setAttribute('href', faviconHref);
+   } else {
+     faviconElement.removeAttribute('href');
+   }
 };
 
 export const AuthProvider = ({ children }) => {
