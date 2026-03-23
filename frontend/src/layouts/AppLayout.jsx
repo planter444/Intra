@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
@@ -123,12 +124,17 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:static md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:static md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient font-bold text-white shadow-lg">
-                {settings?.branding?.logoText || 'KH'}
-              </div>
+              <BrandLogo
+                logoUrl={settings?.branding?.faviconUrl}
+                fallbackText={settings?.branding?.logoText || 'KH'}
+                alt={`${settings?.branding?.organizationName || 'KEREA'} logo`}
+                className="h-12 w-12"
+                imageClassName="h-full w-full object-contain p-2"
+                surfaceClassName="bg-white/12 backdrop-blur-sm"
+              />
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/60">{settings?.branding?.organizationName || 'KEREA'}</p>
                 <h1 className="truncate text-lg font-semibold">{settings?.branding?.appName || 'HRMS'}</h1>
@@ -145,7 +151,7 @@ export default function AppLayout({ children }) {
             <p className="text-sm text-white/70">{roleDisplay} · {user?.departmentName || 'KEREA'}</p>
           </div>
 
-          <nav className="mt-8 space-y-2">
+          <nav className="mt-8 space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
             {navigation.map((item) => {
               const Icon = iconMap[item.key] || User;
 
@@ -176,7 +182,7 @@ export default function AppLayout({ children }) {
 
           <button
             onClick={logout}
-            className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15 md:shrink-0"
           >
             <LogOut size={16} />
             Logout
