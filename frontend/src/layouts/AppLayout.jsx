@@ -144,8 +144,8 @@ export default function AppLayout({ children }) {
 
   return (
     <div className="min-h-screen w-full bg-surface-page text-text-primary">
-      <div className="flex min-h-screen w-full overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:static md:min-h-screen md:self-stretch md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
+      <div className="min-h-screen w-full overflow-x-hidden">
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <BrandLogo
@@ -210,7 +210,7 @@ export default function AppLayout({ children }) {
           </button>
         </aside>
 
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden md:pl-72">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
