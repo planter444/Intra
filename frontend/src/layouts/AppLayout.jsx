@@ -124,7 +124,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:static md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:sticky md:inset-y-auto md:top-0 md:self-start md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <BrandLogo
@@ -194,11 +194,11 @@ export default function AppLayout({ children }) {
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
-                  className="rounded-2xl border p-2 shadow-md md:hidden"
+                  className="rounded-2xl border p-2.5 shadow-md md:hidden"
                   style={mobileMenuOpenStyle}
                   onClick={() => setMobileOpen((current) => !current)}
                 >
-                  <Menu size={18} />
+                  <Menu size={20} />
                 </button>
                 <div className="min-w-0">
                   <p className="text-xs uppercase tracking-[0.3em] text-slate-400">KEREA intranet</p>
