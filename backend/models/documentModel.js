@@ -122,6 +122,7 @@ const listForUser = async (userId) => {
     storedName: row.stored_name,
     mimeType: row.mime_type,
     fileSize: row.file_size,
+    storagePath: row.storage_path,
     createdAt: row.created_at
   }));
 };

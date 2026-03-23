@@ -71,7 +71,7 @@ export default function LoginPage() {
                 type="email"
                 value={form.email}
                 onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                placeholder={settings?.labels?.loginEmailPlaceholder || 'name@kerea.local'}
+                placeholder={settings?.labels?.loginEmailPlaceholder || 'name@kerea.org'}
                 required
               />
             </div>

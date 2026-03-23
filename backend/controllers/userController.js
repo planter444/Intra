@@ -4,6 +4,7 @@ const leaveModel = require('../models/leaveModel');
 const defaultSettings = require('../config/defaultSettings');
 const { comparePassword, hashPassword } = require('../services/authService');
 const { logAction } = require('../services/auditService');
+const { deleteEmployeeData } = require('../services/userDeletionService');
 
 const allowedRoles = ['employee', 'supervisor', 'admin', 'ceo'];
 const allowedGenders = ['male', 'female', 'other'];
@@ -359,20 +360,20 @@ const softDeleteUser = async (req, res, next) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    const user = await userModel.softDelete(id);
+    const { user, cleanup } = await deleteEmployeeData(id);
 
     await logAction({
       actorUserId: req.user.id,
       actorRole: req.user.role,
       action: 'USER_SOFT_DELETE',
-      entityType: 'user',
-      entityId: String(id),
+      entityType: 'admin_action',
+      entityId: String(req.user.id),
       description: `${req.user.fullName} soft deleted ${target.fullName}.`,
-      metadata: {},
+      metadata: { targetUserId: String(id), cleanup },
       ipAddress: req.ip
     });
 
-    res.json({ user });
+    res.json({ user, cleanup });
   } catch (error) {
     next(error);
   }

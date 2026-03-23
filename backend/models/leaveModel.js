@@ -424,6 +424,25 @@ const revertApprovedDaysToBalance = async ({ userId, leaveTypeId, daysRequested 
   );
 };
 
+const listRequestsForUserCleanup = async (userId) => {
+  const result = await query(
+    `
+      SELECT id, supporting_document_stored_name, supporting_document_mime_type, supporting_document_path
+      FROM leave_requests
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    supportingDocumentStoredName: row.supporting_document_stored_name,
+    supportingDocumentMimeType: row.supporting_document_mime_type,
+    supportingDocumentPath: row.supporting_document_path
+  }));
+};
+
 const deleteRequest = async (id) => {
   await query(`DELETE FROM leave_requests WHERE id = $1`, [id]);
 };
@@ -451,6 +470,7 @@ module.exports = {
   listRequests,
   updateRequestStatus,
   updateRequestDetails,
+  listRequestsForUserCleanup,
   deleteRequest,
   cancelRequest,
   applyApprovedDaysToBalance,
