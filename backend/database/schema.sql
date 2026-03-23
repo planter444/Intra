@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_name VARCHAR(120) NOT NULL,
   email VARCHAR(180) UNIQUE NOT NULL,
   phone VARCHAR(40),
-  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'supervisor', 'hr', 'admin', 'ceo')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo')),
+  role_title VARCHAR(120),
   gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'other')),
   department_id BIGINT REFERENCES departments(id) ON DELETE SET NULL,
   position_title VARCHAR(120),
@@ -115,16 +116,26 @@ ALTER TABLE users
 ADD COLUMN IF NOT EXISTS supervisor_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
 
 ALTER TABLE users
-ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
+ADD COLUMN IF NOT EXISTS role_title VARCHAR(120);
 
-ALTER TABLE users
-ALTER COLUMN employee_no DROP NOT NULL;
+UPDATE users
+SET role = 'ceo'
+WHERE role = 'hr';
+
+UPDATE users
+SET role_title = CASE
+  WHEN role = 'ceo' THEN 'CEO'
+  WHEN role = 'admin' THEN 'Admin'
+  WHEN role = 'supervisor' THEN 'Supervisor'
+  ELSE COALESCE(NULLIF(role_title, ''), 'Employee')
+END
+WHERE role_title IS NULL OR CHAR_LENGTH(TRIM(role_title)) = 0;
 
 ALTER TABLE users
 DROP CONSTRAINT IF EXISTS users_role_check;
 
 ALTER TABLE users
-ADD CONSTRAINT users_role_check CHECK (role IN ('employee', 'supervisor', 'hr', 'admin', 'ceo'));
+ADD CONSTRAINT users_role_check CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo'));
 
 ALTER TABLE users
 DROP CONSTRAINT IF EXISTS users_gender_check;

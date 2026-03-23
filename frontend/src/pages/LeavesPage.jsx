@@ -51,7 +51,7 @@ export default function LeavesPage() {
       return externalRequests.filter((request) => String(request.employeeSupervisorId) === String(user.id));
     }
 
-    if (user?.role === 'hr' || user?.role === 'ceo') {
+    if (user?.role === 'admin' || user?.role === 'ceo') {
       return externalRequests;
     }
 
@@ -63,7 +63,7 @@ export default function LeavesPage() {
       return visibleLeaveRequests.filter((request) => request.status === 'pending_supervisor');
     }
 
-    if (user?.role === 'hr' || user?.role === 'ceo') {
+    if (user?.role === 'admin' || user?.role === 'ceo') {
       return visibleLeaveRequests.filter((request) => request.status === 'pending_hr' || request.status === 'pending_ceo');
     }
 
@@ -126,14 +126,14 @@ export default function LeavesPage() {
         ) : null}
 
         <SectionCard
-          title={user?.role === 'supervisor' || user?.role === 'ceo' || user?.role === 'hr' ? 'Leaves' : 'Leave status tracker'}
+          title={user?.role === 'supervisor' || user?.role === 'ceo' || user?.role === 'admin' ? 'Leaves' : 'Leave status tracker'}
           subtitle={user?.role === 'supervisor'
             ? 'Leave requests from employees who report to you.'
-            : user?.role === 'ceo' || user?.role === 'hr'
+            : user?.role === 'ceo' || user?.role === 'admin'
               ? 'Company leave requests currently visible to you.'
               : 'Follow each request from applied to CEO, with supervisor review included when assigned.'}
         >
-          {(user?.role === 'supervisor' || user?.role === 'ceo' || user?.role === 'hr') ? (
+          {(user?.role === 'supervisor' || user?.role === 'ceo' || user?.role === 'admin') ? (
             visibleLeaveRequests.length ? (
               <div className="space-y-3">
                 {visibleLeaveRequests.map((request) => {
@@ -175,7 +175,7 @@ export default function LeavesPage() {
                       <Eye size={16} />View
                     </button>
                   </div>
-                  <LeaveStatusTimeline request={request} actingHrLabel="CEO" compact />
+                  <LeaveStatusTimeline request={request} compact />
                 </div>
               ))}
             </div>

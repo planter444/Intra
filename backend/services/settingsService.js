@@ -53,6 +53,15 @@ const normalizeLegacyPayload = (payload = {}) => {
     nextPayload.interface.dashboardHeroSubtitle = defaultSettings.interface.dashboardHeroSubtitle;
   }
 
+  if (Array.isArray(nextPayload.roles) && !Array.isArray(nextPayload.roleTitles)) {
+    nextPayload.roleTitles = nextPayload.roles
+      .filter((role) => !['ceo', 'admin', 'supervisor', 'hr'].includes(String(role?.key || '').toLowerCase()))
+      .map((role) => ({ value: String(role?.label || '').trim() }))
+      .filter((role) => role.value);
+  }
+
+  delete nextPayload.roles;
+
   return nextPayload;
 };
 
@@ -65,7 +74,7 @@ const getSystemSettings = async () => {
   return {
     ...mergedPayload,
     departments: departments.length ? departments : defaultSettings.departments,
-    roles: Array.isArray(mergedPayload.roles) && mergedPayload.roles.length ? mergedPayload.roles : defaultSettings.roles,
+    roleTitles: Array.isArray(mergedPayload.roleTitles) && mergedPayload.roleTitles.length ? mergedPayload.roleTitles : defaultSettings.roleTitles,
     folders: Array.isArray(mergedPayload.folders) && mergedPayload.folders.length ? mergedPayload.folders : defaultSettings.folders,
     leaveTypes: leaveTypes.length ? leaveTypes : defaultSettings.leaveTypes
   };
@@ -102,6 +111,7 @@ const bootstrapSystem = async ({ ceoSeedEmail, ceoSeedPassword, hashPassword }) 
       email: ceoSeedEmail,
       phone: '0000000000',
       role: 'ceo',
+      roleTitle: 'CEO',
       departmentId: null,
       positionTitle: 'Chief Executive Officer',
       passwordHash
@@ -127,7 +137,7 @@ const normalizeUpdatesByRole = (currentUser, updates = {}) => {
 
   return {
     departments: Array.isArray(updates.departments) ? updates.departments : undefined,
-    roles: Array.isArray(updates.roles) ? updates.roles : undefined,
+    roleTitles: Array.isArray(updates.roleTitles) ? updates.roleTitles : undefined,
     folders: Array.isArray(updates.folders) ? updates.folders : undefined,
     leaveTypes: Array.isArray(updates.leaveTypes) ? updates.leaveTypes : undefined,
     labels: Object.keys(labels).length ? labels : undefined

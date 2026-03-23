@@ -8,6 +8,28 @@ import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { createUser, fetchUsers, resetUserPassword, softDeleteUser, updateUser } from '../services/userService';
 
+const EMPLOYEE_ROLE_SELECTION_PREFIX = 'title:';
+const privilegedRoleOptions = [
+  { value: 'supervisor', role: 'supervisor', roleTitle: 'Supervisor', label: 'Supervisor' },
+  { value: 'admin', role: 'admin', roleTitle: 'Admin', label: 'Admin' },
+  { value: 'ceo', role: 'ceo', roleTitle: 'CEO', label: 'CEO' }
+];
+
+const normalizeRoleTitleValue = (value) => String(value || '').trim() || 'Employee';
+const getEmployeeRoleSelection = (roleTitle) => `${EMPLOYEE_ROLE_SELECTION_PREFIX}${normalizeRoleTitleValue(roleTitle)}`;
+const getRoleSelection = (role, roleTitle) => (role === 'employee' ? getEmployeeRoleSelection(roleTitle) : role);
+const resolveRoleSelection = (selection) => {
+  const privilegedRole = privilegedRoleOptions.find((option) => option.value === selection);
+  if (privilegedRole) {
+    return { role: privilegedRole.role, roleTitle: privilegedRole.roleTitle };
+  }
+
+  return {
+    role: 'employee',
+    roleTitle: normalizeRoleTitleValue(String(selection || '').replace(EMPLOYEE_ROLE_SELECTION_PREFIX, ''))
+  };
+};
+
 const defaultForm = {
   employeeNo: '',
   firstName: '',
@@ -15,7 +37,7 @@ const defaultForm = {
   email: '',
   phone: '',
   gender: '',
-  role: 'employee',
+  roleSelection: getEmployeeRoleSelection('Employee'),
   departmentId: '',
   supervisorId: '',
   positionTitle: '',
@@ -71,18 +93,22 @@ export default function EmployeesPage() {
     [settings]
   );
   const roleOptions = useMemo(() => {
-    const configuredRoles = Array.isArray(settings?.roles) ? settings.roles : [];
-    const fallbackRoles = [
-      { key: 'employee', label: 'Employee' },
-      { key: 'supervisor', label: 'Supervisor' },
-      { key: 'hr', label: 'HR' },
-      { key: 'admin', label: 'Admin' },
-      { key: 'ceo', label: 'CEO' }
-    ];
-    return fallbackRoles.map((role) => configuredRoles.find((item) => item.key === role.key) || role);
-  }, [settings?.roles]);
+    const configuredTitles = Array.isArray(settings?.roleTitles) ? settings.roleTitles : [];
+    const employeeTitleOptions = [...new Set(configuredTitles
+      .map((item) => normalizeRoleTitleValue(item?.value))
+      .filter(Boolean)
+      .concat('Employee'))]
+      .map((title) => ({
+        value: getEmployeeRoleSelection(title),
+        role: 'employee',
+        roleTitle: title,
+        label: title
+      }));
+
+    return [...privilegedRoleOptions, ...employeeTitleOptions];
+  }, [settings?.roleTitles]);
   const supervisorOptions = useMemo(
-    () => users.filter((candidate) => candidate.isActive && !candidate.isDeleted && ['supervisor', 'admin', 'ceo', 'hr'].includes(candidate.role)),
+    () => users.filter((candidate) => candidate.isActive && !candidate.isDeleted && ['supervisor', 'admin', 'ceo'].includes(candidate.role)),
     [users]
   );
 
@@ -91,10 +117,10 @@ export default function EmployeesPage() {
 
     return users.filter((candidate) => {
       const matchesSearch = !searchValue
-        || [candidate.fullName, candidate.email, candidate.employeeNo, candidate.departmentName, candidate.positionTitle]
+        || [candidate.fullName, candidate.email, candidate.employeeNo, candidate.departmentName, candidate.positionTitle, candidate.roleTitle]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(searchValue));
-      const matchesRole = !filters.role || (filters.role === 'ceo' ? ['ceo', 'hr'].includes(candidate.role) : candidate.role === filters.role);
+      const matchesRole = !filters.role || getRoleSelection(candidate.role, candidate.roleTitle) === filters.role;
       const matchesDepartment = !filters.departmentId || String(candidate.departmentId || '') === String(filters.departmentId);
       return matchesSearch && matchesRole && matchesDepartment;
     });
@@ -125,7 +151,7 @@ export default function EmployeesPage() {
       email: editingRecord.email || '',
       phone: editingRecord.phone || '',
       gender: editingRecord.gender || '',
-      role: editingRecord.role || 'employee',
+      roleSelection: getRoleSelection(editingRecord.role, editingRecord.roleTitle),
       departmentId: editingRecord.departmentId || '',
       supervisorId: editingRecord.supervisorId || '',
       positionTitle: editingRecord.positionTitle || '',
@@ -159,7 +185,7 @@ export default function EmployeesPage() {
       email: record.email || '',
       phone: record.phone || '',
       gender: record.gender || '',
-      role: record.role || 'employee',
+      roleSelection: getRoleSelection(record.role, record.roleTitle),
       departmentId: record.departmentId || '',
       supervisorId: record.supervisorId || '',
       positionTitle: record.positionTitle || '',
@@ -173,13 +199,18 @@ export default function EmployeesPage() {
       return;
     }
 
+    const roleAssignment = resolveRoleSelection(form.roleSelection);
     const payload = {
       ...form,
       employeeNo: form.employeeNo || null,
       gender: form.gender || null,
       departmentId: form.departmentId || null,
-      supervisorId: form.supervisorId || null
+      supervisorId: form.supervisorId || null,
+      role: roleAssignment.role,
+      roleTitle: roleAssignment.roleTitle
     };
+
+    delete payload.roleSelection;
 
     try {
       if (editingUserId) {
@@ -241,7 +272,7 @@ export default function EmployeesPage() {
 
   const getUserInitials = (record) => `${record.firstName?.[0] || ''}${record.lastName?.[0] || ''}`.toUpperCase() || 'U';
 
-  const roleFilterOptions = roleOptions.map((role) => [role.key, role.label]);
+  const roleFilterOptions = roleOptions.map((role) => [role.value, role.label]);
 
   return (
     <div className="space-y-6">
@@ -301,9 +332,9 @@ export default function EmployeesPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Role</label>
-                <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}>
+                <select value={form.roleSelection} onChange={(event) => setForm((current) => ({ ...current, roleSelection: event.target.value }))}>
                   {roleOptions.map((role) => (
-                    <option key={role.key} value={role.key}>{role.label}</option>
+                    <option key={role.value} value={role.value}>{role.label}</option>
                   ))}
                 </select>
               </div>
@@ -390,7 +421,7 @@ export default function EmployeesPage() {
                     <p className="text-xs uppercase tracking-wide text-slate-400">{row.employeeNo || 'No employee number'}</p>
                   </div>
                 </div>
-                <RoleBadge role={row.role} showActingLabel={row.role === 'hr' && String(row.id) === String(user?.id)} />
+                <RoleBadge role={row.role} roleTitle={row.roleTitle} />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
@@ -451,7 +482,7 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="py-4 pr-4"><RoleBadge role={row.role} showActingLabel={row.role === 'hr' && String(row.id) === String(user?.id)} /></td>
+                  <td className="py-4 pr-4"><RoleBadge role={row.role} roleTitle={row.roleTitle} /></td>
                   <td className="py-4 pr-4 text-slate-600">{row.departmentName || 'N/A'}</td>
                   <td className="py-4 pr-4">
                     <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${row.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>

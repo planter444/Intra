@@ -1,6 +1,23 @@
 import api from './api';
 
 const notifyDocumentUpdates = () => window.dispatchEvent(new Event('documents-seen-updated'));
+const getCurrentAuthToken = () => String(api.defaults.headers.common.Authorization || '').replace(/^Bearer\s+/i, '');
+const getDocumentUrl = (documentId, preview = false) => {
+  const baseUrl = `${String(api.defaults.baseURL || '').replace(/\/$/, '')}/documents/${documentId}/download`;
+  const params = new URLSearchParams();
+  const token = getCurrentAuthToken();
+
+  if (preview) {
+    params.set('preview', 'true');
+  }
+
+  if (token) {
+    params.set('token', token);
+  }
+
+  const query = params.toString();
+  return query ? `${baseUrl}?${query}` : baseUrl;
+};
 
 export const fetchDocuments = async (params = {}) => {
   const { data } = await api.get('/documents', { params });
@@ -66,26 +83,11 @@ const fetchDocumentBlob = async (documentId, preview = false) => {
 };
 
 export const previewDocument = async (documentId) => {
-  const previewWindow = window.open('', '_blank');
+  window.location.assign(getDocumentUrl(documentId, true));
+};
 
-  try {
-    const { blob } = await fetchDocumentBlob(documentId, true);
-    const objectUrl = URL.createObjectURL(blob);
-
-    if (previewWindow) {
-      previewWindow.location.replace(objectUrl);
-    } else {
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
-    }
-
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-  } catch (error) {
-    if (previewWindow && !previewWindow.closed) {
-      previewWindow.close();
-    }
-
-    throw error;
-  }
+export const openDocumentInNewTab = (documentId) => {
+  window.open(getDocumentUrl(documentId, true), '_blank', 'noopener,noreferrer');
 };
 
 export const downloadDocument = async (documentId) => {

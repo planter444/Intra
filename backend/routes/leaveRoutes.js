@@ -22,9 +22,9 @@ router.get('/balances', getBalances);
 router.get('/requests', listRequests);
 router.get('/requests/:id', getRequest);
 router.get('/requests/:id/supporting-document', downloadSupportingDocument);
-router.post('/requests', authorize('employee', 'supervisor', 'hr', 'admin'), upload.single('supportingDocument'), createRequest);
-router.put('/requests/:id', authorize('employee', 'supervisor', 'hr', 'admin'), upload.single('supportingDocument'), updateRequest);
-router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'hr', 'admin'), cancelRequest);
-router.patch('/requests/:id/decision', authorize('employee', 'supervisor', 'hr', 'admin', 'ceo'), decideRequest);
+router.post('/requests', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), createRequest);
+router.put('/requests/:id', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), updateRequest);
+router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin'), cancelRequest);
+router.patch('/requests/:id/decision', authorize('employee', 'supervisor', 'admin', 'ceo'), decideRequest);
 
 module.exports = router;

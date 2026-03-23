@@ -41,7 +41,6 @@ const iconMap = {
 const defaultNavigationByRole = {
   employee: ['dashboard', 'profile', 'leaves', 'documents'],
   supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
-  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   admin: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'audit'],
   ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings']
 };
@@ -52,9 +51,7 @@ export default function AppLayout({ children }) {
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const location = useLocation();
-  const roleDisplay = user?.role === 'hr' || user?.role === 'ceo'
-    ? 'CEO'
-    : user?.role?.toUpperCase();
+  const roleDisplay = user?.roleTitle || (user?.role ? user.role.toUpperCase() : '');
   const mobileMenuOpenStyle = {
     backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
     color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
@@ -80,7 +77,7 @@ export default function AppLayout({ children }) {
   }, [settings, user]);
 
   useEffect(() => {
-    if (!['supervisor', 'hr', 'ceo'].includes(user?.role)) {
+    if (!['supervisor', 'admin', 'ceo'].includes(user?.role)) {
       setPendingReviewCount(0);
       return;
     }

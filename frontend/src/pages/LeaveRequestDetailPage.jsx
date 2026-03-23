@@ -160,7 +160,7 @@ export default function LeaveRequestDetailPage() {
   }, [request, user?.id]);
 
   const canSupervisorReview = request && String(request.employeeSupervisorId) === String(user?.id) && request.status === 'pending_supervisor';
-  const canOperationalReview = request && (user?.role === 'hr' || user?.role === 'ceo') && request.status === 'pending_hr';
+  const canOperationalReview = request && (user?.role === 'admin' || user?.role === 'ceo') && request.status === 'pending_hr';
   const canFinalCeoReview = request && user?.role === 'ceo' && request.status === 'pending_ceo';
   const canReviseCeoDecision = request && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
   const timeline = request?.timeline || {

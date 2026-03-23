@@ -9,8 +9,8 @@ const router = express.Router();
 router.use(authenticate);
 router.get('/', listDocuments);
 router.get('/user/:userId', listDocuments);
-router.post('/upload', authorize('employee', 'supervisor', 'hr', 'admin', 'ceo'), upload.single('file'), uploadDocument);
+router.post('/upload', authorize('employee', 'supervisor', 'admin', 'ceo'), upload.single('file'), uploadDocument);
 router.get('/:id/download', downloadDocument);
-router.delete('/:id', authorize('admin', 'hr', 'ceo'), deleteDocument);
+router.delete('/:id', authorize('admin', 'ceo'), deleteDocument);
 
 module.exports = router;

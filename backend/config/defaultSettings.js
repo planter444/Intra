@@ -52,7 +52,6 @@ module.exports = {
     loginFooterText: '2026 KEREA. All rights reserved.',
     profileSubtitle: 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, Admin, or CEO.',
     documentsSubtitle: 'Structured employee folders are secured behind authenticated download and preview endpoints.',
-    actingHrLabel: 'CEO',
     navigationDashboard: 'Dashboard',
     navigationEmployees: 'Employees',
     navigationLeaves: 'Leave Management',
@@ -74,7 +73,6 @@ module.exports = {
   navigation: {
     employee: ['dashboard', 'profile', 'leaves', 'documents'],
     supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
-    hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
     admin: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'audit'],
     ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings']
   },
@@ -84,12 +82,8 @@ module.exports = {
     { name: 'Operations', description: 'Operational delivery' },
     { name: 'Marketing', description: 'Marketing and communications' }
   ],
-  roles: [
-    { key: 'employee', label: 'Employee', permissions: ['View own profile', 'Apply for leave', 'View own documents'] },
-    { key: 'supervisor', label: 'Supervisor', permissions: ['Review direct reports', 'Approve supervisor-stage leave', 'View team documents list'] },
-    { key: 'hr', label: 'HR', permissions: ['Operational leave review', 'Manage employees', 'Manage company documents'] },
-    { key: 'admin', label: 'Admin', permissions: ['Manage employees', 'Manage settings', 'View audit logs'] },
-    { key: 'ceo', label: 'CEO', permissions: ['Final approvals', 'Executive oversight', 'Manage employees and documents'] }
+  roleTitles: [
+    { value: 'Employee' }
   ],
   folders: [
     { code: 'id', label: 'ID' },

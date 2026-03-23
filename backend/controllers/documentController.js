@@ -24,7 +24,7 @@ const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition })
 };
 
 const canAccessUserDocuments = (currentUser, targetUserId) => {
-  if (['hr', 'ceo'].includes(currentUser.role)) {
+  if (['admin', 'ceo'].includes(currentUser.role)) {
     return true;
   }
 
@@ -33,7 +33,7 @@ const canAccessUserDocuments = (currentUser, targetUserId) => {
 
 const listDocuments = async (req, res, next) => {
   try {
-    const targetUserId = req.params.userId || req.query.userId || (['hr', 'ceo'].includes(req.user.role) ? undefined : req.user.id);
+    const targetUserId = req.params.userId || req.query.userId || (['admin', 'ceo'].includes(req.user.role) ? undefined : req.user.id);
 
     if (targetUserId && !canAccessUserDocuments(req.user, targetUserId)) {
       return res.status(403).json({ message: 'You do not have permission to access these documents.' });
@@ -65,7 +65,7 @@ const uploadDocument = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid document folder type.' });
     }
 
-    if (!canAccessUserDocuments(req.user, targetUserId) || ((req.user.role === 'employee' || req.user.role === 'admin' || req.user.role === 'supervisor') && String(targetUserId) !== String(req.user.id))) {
+    if (!canAccessUserDocuments(req.user, targetUserId) || ((req.user.role === 'employee' || req.user.role === 'supervisor') && String(targetUserId) !== String(req.user.id))) {
       return res.status(403).json({ message: 'You do not have permission to upload for this user.' });
     }
 
@@ -127,14 +127,20 @@ const downloadDocument = async (req, res, next) => {
     const disposition = req.query.preview === 'true' ? 'inline' : 'attachment';
 
     if (isRemoteStoragePath(document.storagePath)) {
+      const remoteUrl = getRemoteDocumentUrl({
+        storedName: document.storedName,
+        mimeType: document.mimeType,
+        fileName: document.fileName,
+        asAttachment: req.query.preview !== 'true'
+      });
+
+      if (req.query.preview === 'true') {
+        return res.redirect(remoteUrl);
+      }
+
       await sendRemoteDocument({
         res,
-        url: getRemoteDocumentUrl({
-          storedName: document.storedName,
-          mimeType: document.mimeType,
-          fileName: document.fileName,
-          asAttachment: req.query.preview !== 'true'
-        }),
+        url: remoteUrl,
         mimeType: document.mimeType,
         fileName: document.fileName,
         disposition
@@ -162,7 +168,7 @@ const deleteDocument = async (req, res, next) => {
       return res.status(404).json({ message: 'Document not found.' });
     }
 
-    if (!['admin', 'hr', 'ceo'].includes(req.user.role)) {
+    if (!['admin', 'ceo'].includes(req.user.role)) {
       return res.status(403).json({ message: 'You do not have permission to delete this document.' });
     }
 

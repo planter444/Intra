@@ -23,7 +23,7 @@ export const getPendingReviewCount = (requests, user) => {
     return requests.filter((request) => request.status === 'pending_supervisor' && String(request.supervisorApproverId) === String(user.id)).length;
   }
 
-  if (user.role === 'hr') {
+  if (user.role === 'admin') {
     return requests.filter((request) => request.status === 'pending_hr').length;
   }
 

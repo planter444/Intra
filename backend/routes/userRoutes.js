@@ -6,12 +6,12 @@ const { authorize } = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 router.use(authenticate);
-router.get('/', authorize('supervisor', 'admin', 'hr', 'ceo'), listUsers);
-router.post('/', authorize('admin', 'hr', 'ceo'), createUser);
-router.get('/:id', authorize('admin', 'hr', 'employee', 'supervisor', 'ceo'), getProfile);
-router.put('/:id', authorize('admin', 'hr', 'employee', 'supervisor', 'ceo'), updateUser);
-router.patch('/:id/change-password', authorize('admin', 'hr', 'employee', 'supervisor', 'ceo'), changePassword);
-router.patch('/:id/reset-password', authorize('admin', 'hr', 'ceo'), resetPassword);
-router.delete('/:id', authorize('admin', 'hr', 'ceo'), softDeleteUser);
+router.get('/', authorize('supervisor', 'admin', 'ceo'), listUsers);
+router.post('/', authorize('admin', 'ceo'), createUser);
+router.get('/:id', authorize('admin', 'employee', 'supervisor', 'ceo'), getProfile);
+router.put('/:id', authorize('admin', 'employee', 'supervisor', 'ceo'), updateUser);
+router.patch('/:id/change-password', authorize('admin', 'employee', 'supervisor', 'ceo'), changePassword);
+router.patch('/:id/reset-password', authorize('admin', 'ceo'), resetPassword);
+router.delete('/:id', authorize('admin', 'ceo'), softDeleteUser);
 
 module.exports = router;

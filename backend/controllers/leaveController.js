@@ -8,7 +8,7 @@ const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolve
 const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
   const supervisorEvent = auditTrail.find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT'].includes(entry.action));
-  const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'hr'].includes(entry.actorRole));
+  const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'admin'].includes(entry.actorRole));
 
   return {
     submitted: submittedEvent ? { label: 'Submitted', time: submittedEvent.createdAt, actorName: submittedEvent.actorName } : { label: 'Submitted', time: request.createdAt, actorName: request.employeeName },
@@ -66,7 +66,7 @@ const filterGenderRestrictedItems = (items, gender) => items.filter((item) => {
 });
 
 const canAccessRequest = (currentUser, request) => {
-  if (['hr', 'ceo'].includes(currentUser.role)) {
+  if (['admin', 'ceo'].includes(currentUser.role)) {
     return true;
   }
 
@@ -188,7 +188,7 @@ const listLeaveTypes = async (req, res, next) => {
 
 const getBalances = async (req, res, next) => {
   try {
-    const userId = req.query.userId && (req.user.role === 'ceo' || req.user.role === 'hr')
+    const userId = req.query.userId && (req.user.role === 'ceo' || req.user.role === 'admin')
       ? req.query.userId
       : req.user.id;
     const targetUser = String(userId) === String(req.user.id) ? req.user : await userModel.findById(userId);
@@ -460,16 +460,16 @@ const decideRequest = async (req, res, next) => {
       return res.json({ request: updatedRequest });
     }
 
-    if ((req.user.role === 'hr' || req.user.role === 'ceo') && request.status === 'pending_hr') {
+    if ((req.user.role === 'admin' || req.user.role === 'ceo') && request.status === 'pending_hr') {
       const nextStatus = decision === 'approve'
-        ? (req.user.role === 'hr' && request.requiresCeoApproval ? 'pending_ceo' : 'approved')
+        ? (req.user.role === 'admin' && request.requiresCeoApproval ? 'pending_ceo' : 'approved')
         : 'rejected';
 
       const updatedRequest = await leaveModel.updateRequestStatus({
         id,
         status: nextStatus,
-        hrApproverId: req.user.role === 'hr' ? req.user.id : request.hrApproverId,
-        hrComment: req.user.role === 'hr' ? comment || null : request.hrComment,
+        hrApproverId: req.user.role === 'admin' ? req.user.id : request.hrApproverId,
+        hrComment: req.user.role === 'admin' ? comment || null : request.hrComment,
         ceoApproverId: req.user.role === 'ceo' ? req.user.id : request.ceoApproverId,
         ceoComment: req.user.role === 'ceo' ? comment || null : request.ceoComment
       });
@@ -568,7 +568,7 @@ const decideRequest = async (req, res, next) => {
       return res.json({ request: updatedRequest });
     }
 
-    return res.status(403).json({ message: 'Only assigned supervisors, HR, and CEO can decide leave requests.' });
+    return res.status(403).json({ message: 'Only assigned supervisors, Admin, and CEO can decide leave requests.' });
   } catch (error) {
     next(error);
   }

@@ -1,13 +1,57 @@
 const userModel = require('../models/userModel');
+const settingsModel = require('../models/settingsModel');
 const leaveModel = require('../models/leaveModel');
+const defaultSettings = require('../config/defaultSettings');
 const { comparePassword, hashPassword } = require('../services/authService');
 const { logAction } = require('../services/auditService');
 
-const allowedRoles = ['employee', 'supervisor', 'admin', 'ceo', 'hr'];
+const allowedRoles = ['employee', 'supervisor', 'admin', 'ceo'];
 const allowedGenders = ['male', 'female', 'other'];
+const fixedRoleTitles = {
+  employee: 'Employee',
+  supervisor: 'Supervisor',
+  admin: 'Admin',
+  ceo: 'CEO'
+};
+
+const getAllowedRoleTitles = async () => {
+  const settings = await settingsModel.getGlobal();
+  const configuredTitles = Array.isArray(settings?.payload?.roleTitles) && settings.payload.roleTitles.length
+    ? settings.payload.roleTitles
+    : defaultSettings.roleTitles;
+
+  return [...new Set(configuredTitles
+    .map((item) => String(item?.value || '').trim())
+    .filter(Boolean)
+    .concat(fixedRoleTitles.employee))];
+};
+
+const resolveRoleAssignment = async ({ role, roleTitle }) => {
+  if (!allowedRoles.includes(role)) {
+    return { error: 'Selected role is invalid.' };
+  }
+
+  if (role !== 'employee') {
+    return {
+      role,
+      roleTitle: fixedRoleTitles[role]
+    };
+  }
+
+  const normalizedRoleTitle = String(roleTitle || fixedRoleTitles.employee).trim();
+  const allowedRoleTitles = await getAllowedRoleTitles();
+  if (!allowedRoleTitles.includes(normalizedRoleTitle)) {
+    return { error: 'Selected role title is invalid.' };
+  }
+
+  return {
+    role: 'employee',
+    roleTitle: normalizedRoleTitle
+  };
+};
 
 const canManageUser = (currentUser, targetUserId) => {
-  if (currentUser.role === 'admin' || currentUser.role === 'hr' || currentUser.role === 'ceo') {
+  if (currentUser.role === 'admin' || currentUser.role === 'ceo') {
     return true;
   }
 
@@ -65,14 +109,15 @@ const getProfile = async (req, res, next) => {
 
 const createUser = async (req, res, next) => {
   try {
-    const { employeeNo, firstName, lastName, email, phone, role, gender, departmentId, supervisorId, positionTitle, password } = req.body;
+    const { employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, positionTitle, password } = req.body;
 
     if (!firstName || !lastName || !email || !role || !password) {
       return res.status(400).json({ message: 'Names, email, role, and password are required.' });
     }
 
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: 'Selected role is invalid.' });
+    const resolvedRoleAssignment = await resolveRoleAssignment({ role, roleTitle });
+    if (resolvedRoleAssignment.error) {
+      return res.status(400).json({ message: resolvedRoleAssignment.error });
     }
 
     if (gender && !allowedGenders.includes(gender)) {
@@ -97,7 +142,8 @@ const createUser = async (req, res, next) => {
       lastName,
       email,
       phone,
-      role,
+      role: resolvedRoleAssignment.role,
+      roleTitle: resolvedRoleAssignment.roleTitle,
       gender: gender || null,
       departmentId: departmentId || null,
       supervisorId: supervisorId || null,
@@ -167,11 +213,16 @@ const updateUser = async (req, res, next) => {
         }
       }
 
-      if (Object.prototype.hasOwnProperty.call(req.body, 'role')) {
-        if (!allowedRoles.includes(req.body.role)) {
-          return res.status(400).json({ message: 'Selected role is invalid.' });
+      if (Object.prototype.hasOwnProperty.call(req.body, 'role') || Object.prototype.hasOwnProperty.call(req.body, 'roleTitle')) {
+        const resolvedRoleAssignment = await resolveRoleAssignment({
+          role: req.body.role || target.role,
+          roleTitle: req.body.roleTitle || target.roleTitle
+        });
+        if (resolvedRoleAssignment.error) {
+          return res.status(400).json({ message: resolvedRoleAssignment.error });
         }
-        payload.role = req.body.role;
+        payload.role = resolvedRoleAssignment.role;
+        payload.roleTitle = resolvedRoleAssignment.roleTitle;
       }
 
       if (Object.prototype.hasOwnProperty.call(req.body, 'gender') && req.body.gender && !allowedGenders.includes(req.body.gender)) {
@@ -299,7 +350,7 @@ const softDeleteUser = async (req, res, next) => {
       return res.status(400).json({ message: 'You cannot soft delete your own account.' });
     }
 
-    if (!['admin', 'hr', 'ceo'].includes(req.user.role)) {
+    if (!['admin', 'ceo'].includes(req.user.role)) {
       return res.status(403).json({ message: 'You do not have permission to delete users.' });
     }
 

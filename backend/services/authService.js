@@ -16,8 +16,22 @@ const signToken = (user) => jwt.sign(
   { expiresIn: env.jwtExpiresIn }
 );
 
+const signPasswordResetToken = (user) => jwt.sign(
+  {
+    sub: user.id,
+    email: user.email,
+    purpose: 'password_reset'
+  },
+  env.jwtSecret,
+  { expiresIn: env.resetTokenExpiresIn }
+);
+
+const verifyPasswordResetToken = (token) => jwt.verify(token, env.jwtSecret);
+
 module.exports = {
   hashPassword,
   comparePassword,
-  signToken
+  signToken,
+  signPasswordResetToken,
+  verifyPasswordResetToken
 };

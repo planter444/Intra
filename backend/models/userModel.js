@@ -9,6 +9,7 @@ const baseSelect = `
     u.email,
     u.phone,
     u.role,
+    u.role_title,
     u.gender,
     u.department_id,
     d.name AS department_name,
@@ -36,6 +37,7 @@ const authSelect = `
     u.email,
     u.phone,
     u.role,
+    u.role_title,
     u.gender,
     u.department_id,
     d.name AS department_name,
@@ -69,6 +71,7 @@ const mapUser = (row) => {
     email: row.email,
     phone: row.phone,
     role: row.role,
+    roleTitle: row.role_title,
     gender: row.gender,
     departmentId: row.department_id,
     departmentName: row.department_name === 'Human Resources' ? 'Executive Office' : row.department_name,
@@ -142,7 +145,7 @@ const listAll = async ({ includeDeleted = false, role, departmentId, supervisorI
   return result.rows.map(mapUser);
 };
 
-const create = async ({ employeeNo, firstName, lastName, email, phone, role, gender, departmentId, supervisorId, positionTitle, passwordHash }) => {
+const create = async ({ employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, positionTitle, passwordHash }) => {
   const result = await query(
     `
       INSERT INTO users (
@@ -152,16 +155,17 @@ const create = async ({ employeeNo, firstName, lastName, email, phone, role, gen
         email,
         phone,
         role,
+        role_title,
         gender,
         department_id,
         supervisor_id,
         position_title,
         password_hash
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING id
     `,
-    [employeeNo || null, firstName, lastName, email, phone, role, gender || null, departmentId, supervisorId, positionTitle, passwordHash]
+    [employeeNo || null, firstName, lastName, email, phone, role, roleTitle || null, gender || null, departmentId, supervisorId, positionTitle, passwordHash]
   );
 
   return findById(result.rows[0].id);
@@ -175,6 +179,7 @@ const update = async (id, payload) => {
     email: 'email',
     phone: 'phone',
     role: 'role',
+    roleTitle: 'role_title',
     gender: 'gender',
     departmentId: 'department_id',
     supervisorId: 'supervisor_id',

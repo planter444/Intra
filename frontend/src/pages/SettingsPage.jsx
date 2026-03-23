@@ -78,7 +78,7 @@ export default function SettingsPage() {
   }, [leaveTypeEditor.open]);
 
   const departments = useMemo(() => (draft.departments || []).filter((department) => department?.name !== 'Human Resources'), [draft]);
-  const roles = useMemo(() => draft.roles || [], [draft]);
+  const roleTitles = useMemo(() => draft.roleTitles || [], [draft]);
   const folders = useMemo(() => draft.folders || [], [draft]);
   const leaveTypes = useMemo(() => draft.leaveTypes || [], [draft]);
   const hasUnsavedChanges = useMemo(
@@ -142,10 +142,10 @@ export default function SettingsPage() {
     }));
   };
 
-  const updateRoleProfile = (index, key, value) => {
+  const updateRoleTitle = (index, value) => {
     setDraft((current) => ({
       ...current,
-      roles: (current.roles || []).map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item)
+      roleTitles: (current.roleTitles || []).map((item, itemIndex) => itemIndex === index ? { ...item, value } : item)
     }));
   };
 
@@ -164,6 +164,10 @@ export default function SettingsPage() {
     window.setTimeout(() => folderInputRefs.current[nextIndex]?.focus(), 150);
   };
 
+  const handleAddRoleTitle = () => {
+    setDraft((current) => ({ ...current, roleTitles: [...(current.roleTitles || []), { value: '' }] }));
+  };
+
   const handleRemoveDepartment = (index) => {
     const departmentName = departments[index]?.name || 'this department';
     if (!window.confirm(`Remove ${departmentName}?`)) {
@@ -180,6 +184,15 @@ export default function SettingsPage() {
     }
 
     setDraft((current) => ({ ...current, folders: (current.folders || []).filter((_, itemIndex) => itemIndex !== index) }));
+  };
+
+  const handleRemoveRoleTitle = (index) => {
+    const roleTitle = roleTitles[index]?.value || 'this title';
+    if (!window.confirm(`Remove ${roleTitle}?`)) {
+      return;
+    }
+
+    setDraft((current) => ({ ...current, roleTitles: (current.roleTitles || []).filter((_, itemIndex) => itemIndex !== index) }));
   };
 
   const openLeaveTypeEditor = (index = null) => {
@@ -243,6 +256,14 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     const normalizedDepartments = (draft.departments || []).filter((department) => department?.name !== 'Human Resources');
+    const normalizedRoleTitles = (draft.roleTitles || []).reduce((accumulator, roleTitle) => {
+      const value = String(roleTitle?.value || '').trim();
+      if (!value || ['ceo', 'admin', 'supervisor'].includes(value.toLowerCase()) || accumulator.some((item) => item.value.toLowerCase() === value.toLowerCase())) {
+        return accumulator;
+      }
+      accumulator.push({ value });
+      return accumulator;
+    }, []);
     const normalizedFolders = (draft.folders || []).reduce((accumulator, folder) => {
       const code = String(folder?.code || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
       const label = String(folder?.label || '').trim();
@@ -255,13 +276,7 @@ export default function SettingsPage() {
     const payload = isCeoOnly
       ? {
           departments: normalizedDepartments,
-          roles: (draft.roles || []).map((role) => ({
-            key: role.key,
-            label: String(role.label || '').trim() || role.key,
-            permissions: Array.isArray(role.permissions)
-              ? role.permissions.map((permission) => String(permission || '').trim()).filter(Boolean)
-              : []
-          })),
+          roleTitles: normalizedRoleTitles,
           folders: normalizedFolders,
           leaveTypes: draft.leaveTypes,
           labels: {
@@ -275,13 +290,7 @@ export default function SettingsPage() {
       : {
           ...draft,
           departments: normalizedDepartments,
-          roles: (draft.roles || []).map((role) => ({
-            key: role.key,
-            label: String(role.label || '').trim() || role.key,
-            permissions: Array.isArray(role.permissions)
-              ? role.permissions.map((permission) => String(permission || '').trim()).filter(Boolean)
-              : []
-          })),
+          roleTitles: normalizedRoleTitles,
           folders: normalizedFolders
         };
 
@@ -544,11 +553,11 @@ export default function SettingsPage() {
       ) : null}
 
       {activePage === 'employees' ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr),minmax(360px,0.95fr)]">
+        <div className="space-y-6">
           <div ref={employeesSectionRef}>
           <SectionCard
             title="Employees page"
-            subtitle="Manage department sections, role profiles, employee page labels, and jump to employee management."
+            subtitle="Manage department sections, custom role titles, employee page labels, and jump to employee management."
             actions={[
               <button
                 key="open-users"
@@ -601,53 +610,41 @@ export default function SettingsPage() {
 
               <div className="pt-2">
                 <div className="mb-4">
-                  <h3 className="text-base font-semibold text-slate-900">Role profiles</h3>
-                  <p className="mt-1 text-sm text-slate-500">Edit labels and permission notes for the built-in system roles shown in the Role dropdown.</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900">Role titles</h3>
+                      <p className="mt-1 text-sm text-slate-500">Create extra employee titles that appear in the Role dropdown. CEO, Admin, and Supervisor remain the only permission-based system roles.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddRoleTitle}
+                      className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700"
+                    >
+                      Add Title
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-4">
-                  {roles.map((role, index) => (
-                    <div key={role.key} className="rounded-2xl border border-slate-200 p-4">
-                      <div className="grid gap-4 md:grid-cols-[180px,minmax(0,1fr),minmax(0,1.6fr)]">
+                  {roleTitles.length ? roleTitles.map((roleTitle, index) => (
+                    <div key={`${roleTitle.value}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),120px]">
                         <div>
-                          <label className="mb-2 block text-sm font-medium text-slate-700">System key</label>
-                          <input value={role.key} disabled className="cursor-not-allowed bg-slate-100 text-slate-500" />
+                          <label className="mb-2 block text-sm font-medium text-slate-700">Title</label>
+                          <input value={roleTitle.value || ''} onChange={(event) => updateRoleTitle(index, event.target.value)} placeholder="e.g. Accounts Officer" />
                         </div>
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-slate-700">Role label</label>
-                          <input value={role.label || ''} onChange={(event) => updateRoleProfile(index, 'label', event.target.value)} />
-                        </div>
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-slate-700">Permissions</label>
-                          <textarea rows="4" value={Array.isArray(role.permissions) ? role.permissions.join('\n') : ''} onChange={(event) => updateRoleProfile(index, 'permissions', event.target.value.split('\n'))} placeholder="One permission per line" />
+                        <div className="flex items-end">
+                          <button type="button" className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700" onClick={() => handleRemoveRoleTitle(index)}>
+                            Remove
+                          </button>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )) : <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">No extra role titles yet. Add titles like Receptionist, Driver, or Accountant here.</div>}
                 </div>
               </div>
             </div>
           </SectionCard>
           </div>
-
-          <SectionCard title="Employees page preview" subtitle="Visual direction for the customized superior and admin employee screens.">
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900">{draft.labels?.employeeDirectoryTitle || 'Employees'}</h3>
-                  <p className="text-sm text-slate-500">{draft.labels?.employeeDirectorySubtitle || 'Manage employee records and staff.'}</p>
-                </div>
-                <button type="button" className="rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white">Add Employee</button>
-              </div>
-              <div className="grid gap-3">
-                {departments.slice(0, 3).map((department) => (
-                  <div key={department.name} className="rounded-2xl bg-slate-50 px-4 py-3">
-                    <p className="font-medium text-slate-900">{department.name}</p>
-                    <p className="text-sm text-slate-500">{department.description || 'Department description'}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </SectionCard>
         </div>
       ) : null}
 

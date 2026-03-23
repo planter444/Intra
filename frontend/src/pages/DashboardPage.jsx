@@ -10,10 +10,10 @@ export default function DashboardPage() {
   const { user, settings } = useAuth();
   const [summary, setSummary] = useState(null);
   const canViewOrgMetrics = !['employee', 'supervisor'].includes(user?.role);
-  const canOpenEmployees = ['supervisor', 'hr', 'admin', 'ceo'].includes(user?.role);
-  const canOpenDocuments = ['employee', 'supervisor', 'hr', 'admin', 'ceo'].includes(user?.role);
+  const canOpenEmployees = ['supervisor', 'admin', 'ceo'].includes(user?.role);
+  const canOpenDocuments = ['employee', 'supervisor', 'admin', 'ceo'].includes(user?.role);
   const navigate = useNavigate();
-  const roleLabel = user?.role === 'hr' || user?.role === 'ceo' ? 'CEO' : user?.role?.toUpperCase();
+  const roleLabel = user?.roleTitle || (user?.role ? user.role.toUpperCase() : '');
   const leaveSummaryTitle = user?.role === 'ceo' ? 'Leave Types' : 'My Leave Buckets';
   const leaveSummaryHelper = user?.role === 'ceo' ? 'Configured leave types available to the company' : 'Leave balances assigned to you';
   const documentSummaryTitle = user?.role === 'ceo' ? 'Documents' : 'My Documents';

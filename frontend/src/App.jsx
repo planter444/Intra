@@ -10,6 +10,7 @@ import LeavesPage from './pages/LeavesPage';
 import LeaveApplyPage from './pages/LeaveApplyPage';
 import LeaveRequestDetailPage from './pages/LeaveRequestDetailPage';
 import DocumentsPage from './pages/DocumentsPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import SettingsPage from './pages/SettingsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -53,13 +54,14 @@ export default function App() {
     <Routes>
       <Route path="/" element={<LandingRedirect />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin', 'ceo']}><DashboardPage /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin', 'ceo']}><ProfilePage /></ProtectedRoute>} />
-      <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'hr', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
-      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin', 'ceo']}><LeavesPage /></ProtectedRoute>} />
-      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
-      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
-      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'hr', 'admin', 'ceo']}><DocumentsPage /></ProtectedRoute>} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DashboardPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><ProfilePage /></ProtectedRoute>} />
+      <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
+      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeavesPage /></ProtectedRoute>} />
+      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
+      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
+      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DocumentsPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo']}><SettingsPage /></ProtectedRoute>} />
       <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AuditLogsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />

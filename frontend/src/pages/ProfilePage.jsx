@@ -73,7 +73,7 @@ export default function ProfilePage() {
     [visibleBalances]
   );
 
-  const roleValue = profile?.role === 'hr' || profile?.role === 'ceo' ? 'CEO' : profile?.role?.toUpperCase();
+  const roleValue = profile?.roleTitle || (profile?.role ? profile.role.toUpperCase() : '');
   const activeLeaveTypes = visibleBalances.filter((item) => !['maternity', 'paternity'].includes(item.code)).length;
   const profileHasChanges = useMemo(() => {
     if (canEditFullProfile) {

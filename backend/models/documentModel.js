@@ -63,7 +63,7 @@ const listVisible = async ({ viewerId, viewerRole, userId, search } = {}) => {
   const params = [];
   const clauses = [];
 
-  if (!['hr', 'ceo'].includes(viewerRole)) {
+  if (!['admin', 'ceo'].includes(viewerRole)) {
     params.push(viewerId);
     clauses.push(`d.user_id = $${params.length}`);
   } else if (userId) {

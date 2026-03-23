@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { forgotPasswordRequest } from '../services/authService';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, error, loading, settings, isAuthenticated, user } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
+  const [resetNotice, setResetNotice] = useState('');
+  const [resetNoticeTone, setResetNoticeTone] = useState('success');
+  const [resetLoading, setResetLoading] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -17,11 +21,32 @@ export default function LoginPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setResetNotice('');
 
     try {
       await login(form);
     } catch (submitError) {
       console.error(submitError);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!form.email.trim()) {
+      setResetNoticeTone('error');
+      setResetNotice('Enter your email address first, then use Forgot password.');
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      const response = await forgotPasswordRequest({ email: form.email.trim() });
+      setResetNoticeTone('success');
+      setResetNotice(response.message || 'If that email exists in the system, a reset link has been sent.');
+    } catch (requestError) {
+      setResetNoticeTone('error');
+      setResetNotice(requestError.response?.data?.message || 'Unable to send a reset link right now.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -69,6 +94,12 @@ export default function LoginPage() {
               </div>
             </div>
             {error ? <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+            {error ? (
+              <button type="button" onClick={handleForgotPassword} disabled={resetLoading} className="text-sm font-medium text-emerald-700 disabled:cursor-not-allowed disabled:opacity-70">
+                {resetLoading ? 'Sending reset link...' : 'Forgot password?'}
+              </button>
+            ) : null}
+            {resetNotice ? <div className={`rounded-2xl px-4 py-3 text-sm ${resetNoticeTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{resetNotice}</div> : null}
             <button
               type="submit"
               disabled={loading}

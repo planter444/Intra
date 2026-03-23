@@ -6,7 +6,7 @@ import SectionCard from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { fetchUsers } from '../services/userService';
-import { deleteDocument, downloadDocument, fetchDocuments, previewDocument, uploadDocument } from '../services/documentService';
+import { deleteDocument, downloadDocument, fetchDocuments, openDocumentInNewTab, previewDocument, uploadDocument } from '../services/documentService';
 
 const SEEN_DOCUMENT_IDS_KEY = 'kerea_hrms_seen_document_ids';
 const getSeenDocumentIdsStorageKey = (userId) => `${SEEN_DOCUMENT_IDS_KEY}_${userId}`;
@@ -34,7 +34,7 @@ export default function DocumentsPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [seenDocumentIds, setSeenDocumentIds] = useState([]);
   const [seenIdsReady, setSeenIdsReady] = useState(user.role !== 'ceo');
-  const canManageEmployeeDocuments = user.role === 'hr' || user.role === 'ceo';
+  const canManageEmployeeDocuments = user.role === 'admin' || user.role === 'ceo';
   const folderOptions = useMemo(
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
     [settings?.folders]
@@ -251,6 +251,10 @@ export default function DocumentsPage() {
     }
   };
 
+  const handleOpenDocument = (documentId) => {
+    openDocumentInNewTab(documentId);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -260,7 +264,7 @@ export default function DocumentsPage() {
 
       {message ? <div className={`rounded-2xl px-4 py-3 text-sm ${messageTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{message}</div> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[0.95fr,1.5fr]">
+      <div className="space-y-6">
         <SectionCard title="Upload document" subtitle={`Folders: ${(folderOptions.length ? folderOptions.map((folder) => folder.label).join(', ') : 'No folders configured yet')}.`}>
           <form className="space-y-4" onSubmit={handleUpload}>
             {canManageEmployeeDocuments ? (
@@ -357,14 +361,23 @@ export default function DocumentsPage() {
                     header: 'Actions',
                     render: (row) => (
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={() => handlePreview(row.id)}>
+                        <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(event) => {
+                          event.stopPropagation();
+                          handlePreview(row.id);
+                        }}>
                           Preview
                         </button>
-                        <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={() => handleDownload(row.id)}>
+                        <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={(event) => {
+                          event.stopPropagation();
+                          handleDownload(row.id);
+                        }}>
                           Download
                         </button>
                         {canManageEmployeeDocuments ? (
-                          <button type="button" className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={() => handleDelete(row)}>
+                          <button type="button" className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={(event) => {
+                            event.stopPropagation();
+                            handleDelete(row);
+                          }}>
                             <Trash2 size={12} />Delete
                           </button>
                         ) : null}
@@ -373,6 +386,10 @@ export default function DocumentsPage() {
                   }
                 ]}
                 rows={canManageEmployeeDocuments ? selectedFolderDocuments : visibleDocuments}
+                getRowProps={(row) => ({
+                  onClick: () => handleOpenDocument(row.id),
+                  className: 'cursor-pointer transition hover:bg-slate-50'
+                })}
                 emptyLabel={canManageEmployeeDocuments ? 'No documents were found in this folder.' : 'No documents found.'}
               />
             </div>

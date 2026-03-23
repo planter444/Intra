@@ -5,7 +5,9 @@ const userModel = require('../models/userModel');
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : (typeof req.query.token === 'string' ? req.query.token : null);
 
     if (!token) {
       return res.status(401).json({ message: 'Authentication required.' });
