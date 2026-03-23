@@ -143,8 +143,8 @@ export default function AppLayout({ children }) {
   const closeMobile = () => setMobileOpen(false);
 
   return (
-    <div className="min-h-screen bg-surface-page text-text-primary">
-      <div className="flex min-h-screen overflow-x-hidden">
+    <div className="min-h-screen w-full bg-surface-page text-text-primary">
+      <div className="flex min-h-screen w-full overflow-x-hidden">
         <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:static md:min-h-screen md:self-stretch md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
