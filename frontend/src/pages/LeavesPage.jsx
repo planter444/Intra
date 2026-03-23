@@ -102,11 +102,11 @@ export default function LeavesPage() {
         ] : undefined}
       />
 
-      <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} />)}
       </div>
 
-      <div className={showPersonalHistory && user?.role !== 'supervisor' ? 'grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
+      <div className={showPersonalHistory && user?.role !== 'supervisor' ? 'grid gap-6 lg:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
         {showPersonalHistory ? (
         <SectionCard title="My leave history" subtitle="Your submitted leave requests and current statuses.">
           {myRequests.length ? (

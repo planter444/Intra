@@ -173,14 +173,14 @@ export default function ProfilePage() {
     <div className="space-y-6">
       <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, Admin, or CEO.'} />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Role" value={roleValue || '--'} helper="Access level currently assigned" />
         <StatCard title="Department" value={profile?.departmentName || 'Not assigned'} helper="Current department mapping" accent="from-blue-700 to-cyan-500" />
         <StatCard title="Remaining Leave Days" value={totalBalance} helper="Combined tracked leave balance" accent="from-violet-700 to-fuchsia-500" />
         <StatCard title="Tracked Leave Types" value={activeLeaveTypes} helper="Active leave balances visible to you" accent="from-amber-500 to-orange-500" />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.5fr,1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr),minmax(320px,1fr)]">
         <SectionCard title="Personal information" subtitle="Changes are stored securely and governed by backend permissions." actions={[
           isEditingProfile ? (
             <button key="cancel-edit" type="button" className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={handleCancelEditing}>
