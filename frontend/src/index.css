@@ -13,6 +13,7 @@
   --text-primary: #0f172a;
 }
 
+/* Deployed no-gap layout attempt: force the browser shell to fill the viewport edge-to-edge. */
 html,
 body {
   margin: 0;
@@ -30,6 +31,7 @@ body {
   overflow-x: hidden;
 }
 
+/* Deployed no-gap layout attempt: keep the React root stretched across the viewport width. */
 #root {
   width: 100%;
   min-height: 100vh;

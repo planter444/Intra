@@ -173,7 +173,7 @@ export default function ProfilePage() {
     <div className="space-y-6">
       <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, Admin, or CEO.'} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard title="Role" value={roleValue || '--'} helper="Access level currently assigned" />
         <StatCard title="Department" value={profile?.departmentName || 'Not assigned'} helper="Current department mapping" accent="from-blue-700 to-cyan-500" />
         <StatCard title="Remaining Leave Days" value={totalBalance} helper="Combined tracked leave balance" accent="from-violet-700 to-fuchsia-500" />
