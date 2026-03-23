@@ -124,7 +124,7 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:sticky md:inset-y-auto md:top-0 md:self-start md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <BrandLogo
@@ -189,7 +189,7 @@ export default function AppLayout({ children }) {
           </button>
         </aside>
 
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
+        <div className="app-layout-desktop-offset flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
