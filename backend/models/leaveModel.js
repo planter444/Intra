@@ -211,7 +211,7 @@ const findRequestById = async (id) => {
         ceo.last_name AS ceo_last_name
       FROM leave_requests lr
       INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
-      INNER JOIN users u ON u.id = lr.user_id
+      INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
       LEFT JOIN departments d ON d.id = u.department_id
       LEFT JOIN users supervisor ON supervisor.id = lr.supervisor_approver_id
       LEFT JOIN users hr ON hr.id = lr.hr_approver_id
@@ -306,6 +306,7 @@ const listRequests = async ({ viewerId, userId, role, status } = {}) => {
       SELECT
         lr.id
       FROM leave_requests lr
+      INNER JOIN users request_user ON request_user.id = lr.user_id AND request_user.is_deleted = FALSE
       ${whereClause}
       ORDER BY lr.created_at DESC
     `,
@@ -449,8 +450,22 @@ const deleteRequest = async (id) => {
 
 const getSummaryStats = async () => {
   const [pendingLeaves, approvedLeaves] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS total FROM leave_requests WHERE status IN ('pending_supervisor', 'pending_hr', 'pending_ceo')`),
-    query(`SELECT COUNT(*)::int AS total FROM leave_requests WHERE status = 'approved'`)
+    query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM leave_requests lr
+        INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
+        WHERE lr.status IN ('pending_supervisor', 'pending_hr', 'pending_ceo')
+      `
+    ),
+    query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM leave_requests lr
+        INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
+        WHERE lr.status = 'approved'
+      `
+    )
   ]);
 
   return {

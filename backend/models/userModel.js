@@ -88,7 +88,10 @@ const mapUser = (row) => {
 };
 
 const findByEmail = async (email) => {
-  const result = await query(`${authSelect} WHERE LOWER(u.email) = LOWER($1) LIMIT 1`, [email]);
+  const result = await query(
+    `${authSelect} WHERE LOWER(u.email) = LOWER($1) AND u.is_deleted = FALSE ORDER BY u.created_at DESC LIMIT 1`,
+    [email]
+  );
 
   const row = result.rows[0];
   if (!row) {

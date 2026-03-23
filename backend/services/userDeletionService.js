@@ -7,6 +7,9 @@ const leaveModel = require('../models/leaveModel');
 const userModel = require('../models/userModel');
 const { deleteStoredDocument } = require('./documentService');
 
+const buildDeletedEmail = (userId) => `deleted+${String(userId)}-${Date.now()}@deleted.local`;
+const buildDeletedEmployeeNo = (userId) => `DEL-${String(userId)}-${Date.now().toString().slice(-8)}`;
+
 const deleteEmployeeData = async (userId) => {
   const normalizedUserId = String(userId);
   const [documents, leaveRequests] = await Promise.all([
@@ -88,10 +91,16 @@ const deleteEmployeeData = async (userId) => {
     await client.query(
       `
         UPDATE users
-        SET is_deleted = TRUE, is_active = FALSE, deleted_at = NOW(), updated_at = NOW()
+        SET
+          email = $2,
+          employee_no = CASE WHEN employee_no IS NULL THEN NULL ELSE $3 END,
+          is_deleted = TRUE,
+          is_active = FALSE,
+          deleted_at = NOW(),
+          updated_at = NOW()
         WHERE id = $1
       `,
-      [normalizedUserId]
+      [normalizedUserId, buildDeletedEmail(normalizedUserId), buildDeletedEmployeeNo(normalizedUserId)]
     );
 
     await client.query('COMMIT');

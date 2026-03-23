@@ -72,6 +72,18 @@ const canViewUser = async (currentUser, targetUserId) => {
   return Boolean(targetUser && String(targetUser.supervisorId) === String(currentUser.id));
 };
 
+const normalizeEmailInput = (email) => String(email || '').trim();
+
+const ensureEmailAvailable = async ({ email, currentUserId }) => {
+  const existingUser = await userModel.findByEmail(normalizeEmailInput(email));
+
+  if (existingUser && String(existingUser.id) !== String(currentUserId)) {
+    return 'A user with this email already exists.';
+  }
+
+  return null;
+};
+
 const listUsers = async (req, res, next) => {
   try {
     const users = await userModel.listAll({
@@ -111,8 +123,9 @@ const getProfile = async (req, res, next) => {
 const createUser = async (req, res, next) => {
   try {
     const { employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, positionTitle, password } = req.body;
+    const normalizedEmail = normalizeEmailInput(email);
 
-    if (!firstName || !lastName || !email || !role || !password) {
+    if (!firstName || !lastName || !normalizedEmail || !role || !password) {
       return res.status(400).json({ message: 'Names, email, role, and password are required.' });
     }
 
@@ -129,6 +142,11 @@ const createUser = async (req, res, next) => {
       return res.status(400).json({ message: 'Phone number must contain digits only.' });
     }
 
+    const emailConflictMessage = await ensureEmailAvailable({ email: normalizedEmail });
+    if (emailConflictMessage) {
+      return res.status(400).json({ message: emailConflictMessage });
+    }
+
     if (supervisorId) {
       const supervisor = await userModel.findById(supervisorId);
       if (!supervisor || supervisor.isDeleted) {
@@ -141,7 +159,7 @@ const createUser = async (req, res, next) => {
       employeeNo: employeeNo || null,
       firstName,
       lastName,
-      email,
+      email: normalizedEmail,
       phone,
       role: resolvedRoleAssignment.role,
       roleTitle: resolvedRoleAssignment.roleTitle,
@@ -174,6 +192,7 @@ const createUser = async (req, res, next) => {
 const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const normalizedEmail = Object.prototype.hasOwnProperty.call(req.body, 'email') ? normalizeEmailInput(req.body.email) : undefined;
 
     if (!canManageUser(req.user, id)) {
       return res.status(403).json({ message: 'You do not have permission to update this profile.' });
@@ -189,7 +208,7 @@ const updateUser = async (req, res, next) => {
       ? {
         firstName: req.body.firstName,
         lastName: req.body.lastName,
-        email: req.body.email,
+        email: normalizedEmail,
         phone: req.body.phone,
         positionTitle: req.body.positionTitle,
         gender: req.body.gender
@@ -211,6 +230,13 @@ const updateUser = async (req, res, next) => {
         const supervisor = await userModel.findById(req.body.supervisorId);
         if (!supervisor || supervisor.isDeleted) {
           return res.status(400).json({ message: 'Selected supervisor was not found.' });
+        }
+      }
+
+      if (normalizedEmail !== undefined) {
+        const emailConflictMessage = await ensureEmailAvailable({ email: normalizedEmail, currentUserId: id });
+        if (emailConflictMessage) {
+          return res.status(400).json({ message: emailConflictMessage });
         }
       }
 

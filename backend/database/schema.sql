@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS departments (
 
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
-  employee_no VARCHAR(50) UNIQUE,
+  employee_no VARCHAR(50),
   first_name VARCHAR(120) NOT NULL,
   last_name VARCHAR(120) NOT NULL,
-  email VARCHAR(180) UNIQUE NOT NULL,
+  email VARCHAR(180) NOT NULL,
   phone VARCHAR(40),
   role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo')),
   role_title VARCHAR(120),
@@ -143,6 +143,38 @@ DROP CONSTRAINT IF EXISTS users_gender_check;
 ALTER TABLE users
 ADD CONSTRAINT users_gender_check CHECK (gender IN ('male', 'female', 'other') OR gender IS NULL);
 
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_email_key;
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_employee_no_key;
+
+UPDATE users
+SET email = CONCAT('deleted+', id, '-', EXTRACT(EPOCH FROM COALESCE(deleted_at, NOW()))::BIGINT, '@deleted.local')
+WHERE is_deleted = TRUE
+  AND email NOT LIKE 'deleted+%@deleted.local';
+
+UPDATE users
+SET employee_no = CONCAT('DEL-', id, '-', LPAD(MOD(EXTRACT(EPOCH FROM COALESCE(deleted_at, NOW()))::BIGINT, 100000000)::text, 8, '0'))
+WHERE is_deleted = TRUE
+  AND employee_no IS NOT NULL
+  AND employee_no NOT LIKE 'DEL-%';
+
+DELETE FROM documents d
+USING users u
+WHERE d.user_id = u.id
+  AND u.is_deleted = TRUE;
+
+DELETE FROM leave_requests lr
+USING users u
+WHERE lr.user_id = u.id
+  AND u.is_deleted = TRUE;
+
+DELETE FROM leave_balances lb
+USING users u
+WHERE lb.user_id = u.id
+  AND u.is_deleted = TRUE;
+
 ALTER TABLE leave_requests
 ADD COLUMN IF NOT EXISTS supervisor_approver_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
 
@@ -188,6 +220,8 @@ ADD CONSTRAINT documents_folder_type_check CHECK (CHAR_LENGTH(TRIM(folder_type))
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
 CREATE INDEX IF NOT EXISTS idx_users_supervisor ON users(supervisor_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active_unique ON users (LOWER(email)) WHERE is_deleted = FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_employee_no_active_unique ON users (employee_no) WHERE employee_no IS NOT NULL AND is_deleted = FALSE;
 CREATE INDEX IF NOT EXISTS idx_leave_requests_user ON leave_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_supervisor ON leave_requests(supervisor_approver_id);
