@@ -1,6 +1,7 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
@@ -52,16 +53,26 @@ export default function AppLayout({ children }) {
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const location = useLocation();
   const roleDisplay = user?.roleTitle || (user?.role ? user.role.toUpperCase() : '');
+  const mobileButtonBackground = settings?.branding?.mobileMenuOpenBackgroundColor
+    || (settings?.branding?.useDesktopColorsOnMobile === false
+      ? settings?.branding?.mobilePrimaryColor || settings?.branding?.primaryColor
+      : settings?.branding?.primaryColor)
+    || '#166534';
+  const mobileCloseButtonBackground = settings?.branding?.mobileMenuCloseBackgroundColor
+    || (settings?.branding?.useDesktopColorsOnMobile === false
+      ? settings?.branding?.mobilePrimaryColor || settings?.branding?.primaryColor
+      : settings?.branding?.primaryColor)
+    || 'rgba(255,255,255,0.1)';
   const mobileMenuAnimationType = settings?.interface?.mobileMenuAnimationType || 'slide';
   const mobileMenuAnimationEnabled = settings?.interface?.mobileMenuAnimationEnabled !== false;
   const mobileMenuAnimationDuration = Math.min(1200, Math.max(120, Number(settings?.interface?.mobileMenuAnimationDurationMs || 260)));
   const mobileMenuOpenStyle = {
-    background: `linear-gradient(135deg, ${settings?.branding?.mobileMenuGradientFrom || settings?.branding?.mobileGradientFrom || '#14532d'}, ${settings?.branding?.mobileMenuGradientTo || settings?.branding?.mobileGradientTo || '#22c55e'})`,
+    backgroundColor: mobileButtonBackground,
     color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
     borderColor: settings?.branding?.mobileMenuOpenBorderColor || '#e2e8f0'
   };
   const mobileMenuCloseStyle = {
-    background: settings?.branding?.mobileMenuCloseBackgroundColor || 'rgba(255,255,255,0.1)',
+    backgroundColor: mobileCloseButtonBackground,
     color: settings?.branding?.mobileMenuCloseTextColor || '#ffffff',
     borderColor: settings?.branding?.mobileMenuCloseBorderColor || '#22c55e'
   };
@@ -134,12 +145,17 @@ export default function AppLayout({ children }) {
   return (
     <div className="min-h-screen bg-surface-page text-text-primary">
       <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition-all md:static md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
+        <aside className={`fixed inset-y-0 left-0 z-40 w-[230px] max-w-[88vw] transform px-4 py-5 text-white shadow-2xl transition-all md:static md:translate-x-0 md:opacity-100 ${mobileMenuPanelClassName}`} style={mobileMenuPanelStyle}>
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-gradient font-bold text-white shadow-lg">
-                {settings?.branding?.logoText || 'KH'}
-              </div>
+              <BrandLogo
+                logoUrl={settings?.branding?.faviconUrl}
+                fallbackText={settings?.branding?.logoText || 'KH'}
+                alt={`${settings?.branding?.organizationName || 'KEREA'} logo`}
+                className="h-12 w-12"
+                imageClassName="h-full w-full object-contain p-2"
+                surfaceClassName="bg-white/12 backdrop-blur-sm"
+              />
               <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/60">{settings?.branding?.organizationName || 'KEREA'}</p>
                 <h1 className="truncate text-lg font-semibold">{settings?.branding?.appName || 'HRMS'}</h1>
@@ -150,13 +166,13 @@ export default function AppLayout({ children }) {
             </button>
           </div>
 
-          <div className="mt-8 rounded-3xl bg-white/10 p-4 backdrop-blur-sm">
+          <div className="mt-6 rounded-3xl bg-white/10 p-4 backdrop-blur-sm">
             <p className="text-xs uppercase tracking-wide text-white/50">Signed in as</p>
             <p className="mt-2 text-lg font-semibold">{user?.fullName}</p>
             <p className="text-sm text-white/70">{roleDisplay} · {user?.departmentName || 'KEREA'}</p>
           </div>
 
-          <nav className="mt-8 space-y-2">
+          <nav className="mt-6 space-y-1.5">
             {navigation.map((item) => {
               const Icon = iconMap[item.key] || User;
 
@@ -165,7 +181,7 @@ export default function AppLayout({ children }) {
                   key={item.key}
                   to={item.path}
                   onClick={closeMobile}
-                  className={({ isActive }) => `flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-emerald-900 shadow-lg' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
+                  className={({ isActive }) => `flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-emerald-900 shadow-lg' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="w-4 text-center"><Icon size={16} /></span>
@@ -187,7 +203,7 @@ export default function AppLayout({ children }) {
 
           <button
             onClick={logout}
-            className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-medium text-white hover:bg-white/15"
           >
             <LogOut size={16} />
             Logout

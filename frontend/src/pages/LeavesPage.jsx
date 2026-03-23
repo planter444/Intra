@@ -6,6 +6,7 @@ import LeaveStatusTimeline from '../components/LeaveStatusTimeline';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
+import { usePagePresentation } from '../hooks/usePagePresentation';
 import { fetchLeaveBalances, fetchLeaveRequests } from '../services/leaveService';
 import { formatDateRangeDisplay, formatStatusLabel } from '../utils/formatters';
 import { getAvailableBalanceDays } from '../utils/leave';
@@ -18,6 +19,25 @@ const accentClasses = [
   'from-rose-500/15 to-rose-100',
   'from-cyan-500/15 to-cyan-100'
 ];
+
+function LeaveBalanceCard({ balance, index, myRequests }) {
+  const { animationStyle } = usePagePresentation({ animationOrder: index + 1 });
+
+  return (
+    <div key={balance.id} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={animationStyle}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-700">{balance.label}</p>
+          <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{getAvailableBalanceDays(balance, myRequests)}</p>
+          <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">of {balance.defaultDays} days remaining</p>
+        </div>
+        <div className="rounded-2xl bg-white/70 p-3 text-slate-700 shadow-sm">
+          <CalendarDays size={18} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LeavesPage() {
   const navigate = useNavigate();
@@ -83,20 +103,7 @@ export default function LeavesPage() {
       />
 
       <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
-        {balances.map((balance, index) => (
-          <div key={balance.id} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-700">{balance.label}</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{getAvailableBalanceDays(balance, myRequests)}</p>
-                <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">of {balance.defaultDays} days remaining</p>
-              </div>
-              <div className="rounded-2xl bg-white/70 p-3 text-slate-700 shadow-sm">
-                <CalendarDays size={18} />
-              </div>
-            </div>
-          </div>
-        ))}
+        {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} />)}
       </div>
 
       <div className={showPersonalHistory && user?.role !== 'supervisor' ? 'grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
