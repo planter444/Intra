@@ -1,5 +1,6 @@
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  safelist: ['md:pl-72'],
   theme: {
     extend: {
       colors: {

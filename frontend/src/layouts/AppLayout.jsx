@@ -213,7 +213,7 @@ export default function AppLayout({ children }) {
         </aside>
 
         {/* Deployed no-gap layout attempt: offset desktop page content by the fixed sidebar width. */}
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden md:pl-72">
+        <div className="app-layout-desktop-offset flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">

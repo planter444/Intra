@@ -37,6 +37,12 @@ body {
   overflow-x: hidden;
 }
 
+@media (min-width: 768px) {
+  .app-layout-desktop-offset {
+    padding-left: 18rem;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
