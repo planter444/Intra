@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Users, ClipboardList, CheckCircle, CalendarDays, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
@@ -31,11 +32,32 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        {canViewOrgMetrics ? <StatCard title="Total Headcount" value={summary?.headcount ?? '--'} helper="Active non-deleted users" onClick={canOpenEmployees ? () => navigate('/employees') : undefined} /> : null}
-        {canViewOrgMetrics ? <StatCard title="Pending Leave Actions" value={summary?.pendingLeaves ?? '--'} helper="Awaiting executive review" accent="from-amber-600 to-orange-500" onClick={() => navigate('/leaves')} /> : null}
-        {canViewOrgMetrics ? <StatCard title="Approved Leave Requests" value={summary?.approvedLeaves ?? '--'} helper="Completed approvals" accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} /> : null}
-        <StatCard title={leaveSummaryTitle} value={summary?.myLeaveBalanceTypes ?? '--'} helper={leaveSummaryHelper} accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
-        <StatCard title={documentSummaryTitle} value={summary?.myDocuments ?? '--'} helper={documentSummaryHelper} accent="from-violet-700 to-fuchsia-500" onClick={canOpenDocuments ? () => navigate('/documents') : undefined} />
+        {canViewOrgMetrics ? (
+          <div className="relative">
+            <StatCard title="Total Headcount" value={summary?.headcount ?? '--'} helper="Active non-deleted users" onClick={canOpenEmployees ? () => navigate('/employees') : undefined} />
+            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-emerald-700 to-emerald-500 p-3 text-white shadow-sm"><Users size={18} /></div>
+          </div>
+        ) : null}
+        {canViewOrgMetrics ? (
+          <div className="relative">
+            <StatCard title="Pending Leave Actions" value={summary?.pendingLeaves ?? '--'} helper="Awaiting executive review" accent="from-amber-600 to-orange-500" onClick={() => navigate('/leaves')} />
+            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-amber-600 to-orange-500 p-3 text-white shadow-sm"><ClipboardList size={18} /></div>
+          </div>
+        ) : null}
+        {canViewOrgMetrics ? (
+          <div className="relative">
+            <StatCard title="Approved Leave Requests" value={summary?.approvedLeaves ?? '--'} helper="Completed approvals" accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
+            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm"><CheckCircle size={18} /></div>
+          </div>
+        ) : null}
+        <div className="relative">
+          <StatCard title={leaveSummaryTitle} value={summary?.myLeaveBalanceTypes ?? '--'} helper={leaveSummaryHelper} accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
+          <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm"><CalendarDays size={18} /></div>
+        </div>
+        <div className="relative">
+          <StatCard title={documentSummaryTitle} value={summary?.myDocuments ?? '--'} helper={documentSummaryHelper} accent="from-violet-700 to-fuchsia-500" onClick={canOpenDocuments ? () => navigate('/documents') : undefined} />
+          <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-violet-700 to-fuchsia-500 p-3 text-white shadow-sm"><FileText size={18} /></div>
+        </div>
       </div>
 
       <div>

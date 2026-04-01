@@ -120,7 +120,7 @@ const downloadDocument = async (req, res, next) => {
       return res.status(404).json({ message: 'Document not found.' });
     }
 
-    if (!canAccessUserDocuments(req.user, document.userId)) {
+    if (document.folderType !== 'branding' && !canAccessUserDocuments(req.user, document.userId)) {
       return res.status(403).json({ message: 'You do not have permission to access this document.' });
     }
 

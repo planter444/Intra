@@ -121,28 +121,8 @@ const bootstrapSystem = async ({ ceoSeedEmail, ceoSeedPassword, hashPassword }) 
   await leaveModel.ensureLeaveBalancesForAllUsers();
 };
 
-const normalizeUpdatesByRole = (currentUser, updates = {}) => {
-  if (currentUser.role !== 'ceo') {
-    return updates;
-  }
-
-  const allowedLabelKeys = ['leaveModuleTitle', 'employeeDirectoryTitle', 'employeeDirectorySubtitle', 'documentsModuleTitle', 'documentsSubtitle'];
-  const labels = allowedLabelKeys.reduce((acc, key) => {
-    if (updates.labels && Object.prototype.hasOwnProperty.call(updates.labels, key)) {
-      acc[key] = updates.labels[key];
-    }
-
-    return acc;
-  }, {});
-
-  return {
-    departments: Array.isArray(updates.departments) ? updates.departments : undefined,
-    roleTitles: Array.isArray(updates.roleTitles) ? updates.roleTitles : undefined,
-    folders: Array.isArray(updates.folders) ? updates.folders : undefined,
-    leaveTypes: Array.isArray(updates.leaveTypes) ? updates.leaveTypes : undefined,
-    labels: Object.keys(labels).length ? labels : undefined
-  };
-};
+// Admin and CEO can update the full settings payload; other roles cannot hit this route.
+const normalizeUpdatesByRole = (currentUser, updates = {}) => updates;
 
 const updateSystemSettings = async ({ currentUser, updates }) => {
   const current = await settingsModel.getGlobal();
@@ -164,10 +144,8 @@ const updateSystemSettings = async ({ currentUser, updates }) => {
 };
 
 const restoreSystemSettings = async ({ currentUser }) => {
+  // Restore settings only; do not alter departments, leave types, or balances.
   await settingsModel.upsertGlobal(defaultSettings, currentUser.id);
-  await settingsModel.syncDepartments(defaultSettings.departments);
-  await leaveModel.syncLeaveTypes(defaultSettings.leaveTypes);
-  await leaveModel.ensureLeaveBalancesForAllUsers();
   return getSystemSettings();
 };
 

@@ -83,6 +83,21 @@ module.exports = {
       leave: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
       login: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
       settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
+    },
+    uiVariant: {
+      active: 'original',
+      applyTo: 'all',
+      redesignedTheme: {
+        backgroundImageUrl: '',
+        overlayColor: '#0b2e13',
+        overlayOpacity: 0.45,
+        sidebarGradientFrom: '#14532d',
+        sidebarGradientTo: '#22c55e',
+        glassCardColor: '#ffffff',
+        glassCardOpacity: 0.18,
+        glassBlurPx: 14,
+        cardTextColor: '#0f172a'
+      }
     }
   },
   navigation: {
@@ -104,6 +119,8 @@ module.exports = {
     { code: 'id', label: 'ID' },
     { code: 'contracts', label: 'Contracts' },
     { code: 'certificates', label: 'Certificates' },
+    { code: 'branding', label: 'Branding' },
+    { code: 'profile', label: 'Profile Photos' },
     { code: 'other', label: 'Other' }
   ],
   leaveTypes: [

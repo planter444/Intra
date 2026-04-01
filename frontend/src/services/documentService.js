@@ -1,8 +1,20 @@
 import api from './api';
 
 const notifyDocumentUpdates = () => window.dispatchEvent(new Event('documents-seen-updated'));
-const getCurrentAuthToken = () => String(api.defaults.headers.common.Authorization || '').replace(/^Bearer\s+/i, '');
-const getDocumentUrl = (documentId, preview = false) => {
+const getCurrentAuthToken = () => {
+  const header = String(api.defaults.headers.common.Authorization || '');
+  const tokenFromHeader = header.replace(/^Bearer\s+/i, '');
+  if (tokenFromHeader) {
+    return tokenFromHeader;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem('kerea_hrms_auth') || 'null');
+    return saved?.token || '';
+  } catch {
+    return '';
+  }
+};
+export const getDocumentUrl = (documentId, preview = false) => {
   const baseUrl = `${String(api.defaults.baseURL || '').replace(/\/$/, '')}/documents/${documentId}/download`;
   const params = new URLSearchParams();
   const token = getCurrentAuthToken();

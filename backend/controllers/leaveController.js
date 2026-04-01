@@ -121,11 +121,6 @@ const validateLeaveInputs = async ({ user, leaveTypeCode, startDate, endDate, ha
     return { status: 400, message: 'Invalid leave dates.' };
   }
 
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  if (start < getTodayDate()) {
-    return { status: 400, message: 'Leave requests cannot start in the past.' };
-  }
 
   const balances = filterGenderRestrictedItems(await leaveModel.getBalancesForUser(user.id), user.gender);
   const currentBalance = balances.find((entry) => entry.leaveTypeId === leaveType.id);

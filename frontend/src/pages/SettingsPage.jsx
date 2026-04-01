@@ -8,6 +8,7 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { restoreSettings, updateSettings } from '../services/settingsService';
+import { uploadDocument } from '../services/documentService';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
@@ -44,9 +45,15 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const isCeoOnly = user?.role === 'ceo';
   const availablePages = isCeoOnly
-    ? [['employees', 'Employees Page'], ['documents', 'Documents Page'], ['leave', 'Leave Page']]
+    ? [
+        ['ui', 'UI Variant'],
+        ['employees', 'Employees Page'],
+        ['documents', 'Documents Page'],
+        ['leave', 'Leave Page']
+      ]
     : [
         ['branding', 'Branding'],
+        ['ui', 'UI Variant'],
         ['dashboard', 'Dashboard'],
         ['login', 'Login Page'],
         ['navigation', 'Navigation'],
@@ -57,7 +64,7 @@ export default function SettingsPage() {
       ];
   const [draft, setDraft] = useState(() => clone(settings || {}));
   const [message, setMessage] = useState('');
-  const [activePage, setActivePage] = useState(isCeoOnly ? 'employees' : 'branding');
+  const [activePage, setActivePage] = useState(isCeoOnly ? 'ui' : 'branding');
   const [leaveTypeEditor, setLeaveTypeEditor] = useState({ open: false, index: null, form: emptyLeaveTypeForm });
   const employeesSectionRef = useRef(null);
   const leaveSectionRef = useRef(null);
@@ -65,6 +72,7 @@ export default function SettingsPage() {
   const departmentInputRefs = useRef([]);
   const folderInputRefs = useRef([]);
   const faviconInputRef = useRef(null);
+  const bgUploadInputRef = useRef(null);
 
   useEffect(() => {
     if (settings) {
@@ -103,6 +111,56 @@ export default function SettingsPage() {
       branding: {
         ...current.branding,
         [key]: value
+      }
+    }));
+  };
+
+  const handleUploadRedesignedBackground = async (event) => {
+    const file = event.target.files?.[0];
+    try {
+      if (!file) return;
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        setMessage('Please upload a JPG, PNG, or WEBP image.');
+        return;
+      }
+      const doc = await uploadDocument({ file, folderType: 'branding' });
+      setRedesignedThemeField('backgroundImageUrl', `document:${doc.id}`);
+      setMessage('Background image uploaded. Click Save settings to apply.');
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to upload background image.');
+    } finally {
+      if (bgUploadInputRef.current) {
+        bgUploadInputRef.current.value = '';
+      }
+    }
+  };
+
+  const setUiVariantField = (key, value) => {
+    setDraft((current) => ({
+      ...current,
+      interface: {
+        ...current.interface,
+        uiVariant: {
+          ...(current.interface?.uiVariant || {}),
+          [key]: value
+        }
+      }
+    }));
+  };
+
+  const setRedesignedThemeField = (key, value) => {
+    setDraft((current) => ({
+      ...current,
+      interface: {
+        ...current.interface,
+        uiVariant: {
+          ...(current.interface?.uiVariant || {}),
+          redesignedTheme: {
+            ...(current.interface?.uiVariant?.redesignedTheme || {}),
+            [key]: value
+          }
+        }
       }
     }));
   };
@@ -339,7 +397,22 @@ export default function SettingsPage() {
       mobileMenuAnimationEnabled: draft.interface?.mobileMenuAnimationEnabled !== false,
       mobileMenuAnimationType: ['slide', 'fade', 'scale'].includes(draft.interface?.mobileMenuAnimationType) ? draft.interface.mobileMenuAnimationType : 'slide',
       mobileMenuAnimationDurationMs: Math.max(120, Number(draft.interface?.mobileMenuAnimationDurationMs || 260)),
-      pageExperience: normalizedPageExperience
+      pageExperience: normalizedPageExperience,
+      uiVariant: {
+        active: ['original', 'redesigned'].includes(draft.interface?.uiVariant?.active) ? draft.interface.uiVariant.active : 'original',
+        applyTo: ['all', 'small_only', 'large_only'].includes(draft.interface?.uiVariant?.applyTo) ? draft.interface.uiVariant.applyTo : 'all',
+        redesignedTheme: {
+          backgroundImageUrl: String(draft.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || ''),
+          overlayColor: draft.interface?.uiVariant?.redesignedTheme?.overlayColor || '#0b2e13',
+          overlayOpacity: Math.max(0, Math.min(1, Number(draft.interface?.uiVariant?.redesignedTheme?.overlayOpacity ?? 0.45))),
+          sidebarGradientFrom: draft.interface?.uiVariant?.redesignedTheme?.sidebarGradientFrom || '#14532d',
+          sidebarGradientTo: draft.interface?.uiVariant?.redesignedTheme?.sidebarGradientTo || '#22c55e',
+          glassCardColor: draft.interface?.uiVariant?.redesignedTheme?.glassCardColor || '#ffffff',
+          glassCardOpacity: Math.max(0, Math.min(1, Number(draft.interface?.uiVariant?.redesignedTheme?.glassCardOpacity ?? 0.18))),
+          glassBlurPx: Math.max(0, Number(draft.interface?.uiVariant?.redesignedTheme?.glassBlurPx ?? 14)),
+          cardTextColor: draft.interface?.uiVariant?.redesignedTheme?.cardTextColor || '#0f172a'
+        }
+      }
     };
     const payload = isCeoOnly
       ? {
@@ -353,7 +426,8 @@ export default function SettingsPage() {
             leaveModuleTitle: draft.labels?.leaveModuleTitle || '',
             documentsModuleTitle: draft.labels?.documentsModuleTitle || '',
             documentsSubtitle: draft.labels?.documentsSubtitle || ''
-          }
+          },
+          interface: normalizedInterface
         }
       : {
           ...draft,
@@ -451,6 +525,60 @@ export default function SettingsPage() {
             </div>
           </div>
         </SectionCard>
+      ) : null}
+
+      {!isCeoOnly && activePage === 'ui' ? (
+        <div className="space-y-6">
+          <SectionCard title="Redesigned UI - Activation" subtitle="Switch between the original UI and the Redesigned UI and choose where to apply it by screen size.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Active UI</label>
+                <select value={draft.interface?.uiVariant?.active || 'original'} onChange={(e) => setUiVariantField('active', e.target.value)}>
+                  <option value="original">Original UI</option>
+                  <option value="redesigned">Redesigned UI</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Apply To</label>
+                <select value={draft.interface?.uiVariant?.applyTo || 'all'} onChange={(e) => setUiVariantField('applyTo', e.target.value)}>
+                  <option value="all">All screens</option>
+                  <option value="small_only">Small screens only</option>
+                  <option value="large_only">Large screens only</option>
+                </select>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Redesigned UI - Theme" subtitle="Customize the background, overlay, sidebar gradient, and glass card look. These settings do not affect the original UI.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-slate-700">Background image URL</label>
+                <div className="flex items-center gap-3">
+                  <input value={draft.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || ''} onChange={(e) => setRedesignedThemeField('backgroundImageUrl', e.target.value)} />
+                  <input ref={bgUploadInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadRedesignedBackground} />
+                  <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgUploadInputRef.current?.click()}>Upload from computer</button>
+                </div>
+              </div>
+              <SettingsInput label="Overlay Color" value={draft.interface?.uiVariant?.redesignedTheme?.overlayColor || '#0b2e13'} onChange={(v) => setRedesignedThemeField('overlayColor', v)} colorPicker />
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Overlay Opacity</label>
+                <input type="number" min="0" max="1" step="0.05" value={draft.interface?.uiVariant?.redesignedTheme?.overlayOpacity ?? 0.45} onChange={(e) => setRedesignedThemeField('overlayOpacity', e.target.value)} />
+              </div>
+              <SettingsInput label="Sidebar Gradient From" value={draft.interface?.uiVariant?.redesignedTheme?.sidebarGradientFrom || '#14532d'} onChange={(v) => setRedesignedThemeField('sidebarGradientFrom', v)} colorPicker />
+              <SettingsInput label="Sidebar Gradient To" value={draft.interface?.uiVariant?.redesignedTheme?.sidebarGradientTo || '#22c55e'} onChange={(v) => setRedesignedThemeField('sidebarGradientTo', v)} colorPicker />
+              <SettingsInput label="Glass Card Color" value={draft.interface?.uiVariant?.redesignedTheme?.glassCardColor || '#ffffff'} onChange={(v) => setRedesignedThemeField('glassCardColor', v)} colorPicker />
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Glass Card Opacity</label>
+                <input type="number" min="0" max="1" step="0.05" value={draft.interface?.uiVariant?.redesignedTheme?.glassCardOpacity ?? 0.18} onChange={(e) => setRedesignedThemeField('glassCardOpacity', e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Glass Blur (px)</label>
+                <input type="number" min="0" max="40" value={draft.interface?.uiVariant?.redesignedTheme?.glassBlurPx ?? 14} onChange={(e) => setRedesignedThemeField('glassBlurPx', e.target.value)} />
+              </div>
+              <SettingsInput label="Card Text Color" value={draft.interface?.uiVariant?.redesignedTheme?.cardTextColor || '#0f172a'} onChange={(v) => setRedesignedThemeField('cardTextColor', v)} colorPicker />
+            </div>
+          </SectionCard>
+        </div>
       ) : null}
 
       {!isCeoOnly && activePage === 'branding' ? (
@@ -733,7 +861,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               {departments.map((department, index) => (
-                <div key={department.id || `department-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                <div key={`${department.name}-${index}`} className="rounded-2xl border border-slate-200 p-4">
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),120px]">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700">Name</label>

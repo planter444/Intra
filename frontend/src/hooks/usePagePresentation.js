@@ -12,6 +12,35 @@ const fallbackPageExperience = {
   settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
 };
 
+const fallbackRedesignedTheme = {
+  backgroundImageUrl: '',
+  overlayColor: '#0b2e13',
+  overlayOpacity: 0.45,
+  sidebarGradientFrom: '#14532d',
+  sidebarGradientTo: '#22c55e',
+  glassCardColor: '#ffffff',
+  glassCardOpacity: 0.18,
+  glassBlurPx: 14,
+  cardTextColor: '#0f172a'
+};
+
+export const isRedesignedActive = (settings) => {
+  const ui = settings?.interface?.uiVariant;
+  if (!ui || ui.active !== 'redesigned') {
+    return false;
+  }
+
+  const applyTo = ui.applyTo || 'all';
+  const isSmall = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+  const isLarge = !isSmall;
+  return applyTo === 'all' || (applyTo === 'small_only' && isSmall) || (applyTo === 'large_only' && isLarge);
+};
+
+export const getRedesignedTheme = (settings) => ({
+  ...fallbackRedesignedTheme,
+  ...(settings?.interface?.uiVariant?.redesignedTheme || {})
+});
+
 const clamp = (value, min, max, fallback) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -20,7 +49,7 @@ const clamp = (value, min, max, fallback) => {
   return Math.min(max, Math.max(min, numeric));
 };
 
-const withOpacity = (color, opacity) => {
+export const withOpacity = (color, opacity) => {
   const value = String(color || '').trim();
   const normalizedOpacity = clamp(opacity, 0, 1, 1);
   const fullHexMatch = value.match(/^#([0-9a-f]{6})$/i);
@@ -137,9 +166,20 @@ export const usePagePresentation = ({ animationOrder = 0 } = {}) => {
     };
   }, [animationOrder, entered, presentation]);
 
-  const cardStyle = useMemo(() => ({
-    backgroundColor: withOpacity(presentation.cardBackgroundColor, presentation.cardBackgroundOpacity)
-  }), [presentation.cardBackgroundColor, presentation.cardBackgroundOpacity]);
+  const cardStyle = useMemo(() => {
+    if (isRedesignedActive(settings)) {
+      const theme = getRedesignedTheme(settings);
+      return {
+        backgroundColor: withOpacity(theme.glassCardColor, theme.glassCardOpacity),
+        backdropFilter: `saturate(160%) blur(${Number(theme.glassBlurPx) || 0}px)`,
+        color: theme.cardTextColor || undefined
+      };
+    }
+
+    return {
+      backgroundColor: withOpacity(presentation.cardBackgroundColor, presentation.cardBackgroundOpacity)
+    };
+  }, [presentation.cardBackgroundColor, presentation.cardBackgroundOpacity, settings]);
 
   return {
     animationStyle,

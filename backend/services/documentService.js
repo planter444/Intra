@@ -41,12 +41,14 @@ const getCloudinaryClient = () => {
 
 const getConfiguredFolders = async () => {
   const settings = await settingsModel.getGlobal();
-  const configuredFolders = Array.isArray(settings?.payload?.folders) && settings.payload.folders.length
-    ? settings.payload.folders
-    : defaultSettings.folders;
+  // Union DB-configured folders with defaults to guarantee essential folders (branding, profile) are present.
+  const sourceFolders = [
+    ...(Array.isArray(settings?.payload?.folders) ? settings.payload.folders : []),
+    ...defaultSettings.folders
+  ];
 
   const seenCodes = new Set();
-  return configuredFolders.reduce((accumulator, folder) => {
+  return sourceFolders.reduce((accumulator, folder) => {
     const code = normalizeFolderCode(folder?.code);
     if (!code || seenCodes.has(code)) {
       return accumulator;

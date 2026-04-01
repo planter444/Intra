@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Pencil } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
@@ -6,6 +6,7 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { changeUserPassword, fetchUserProfile, updateUser } from '../services/userService';
+import { fetchDocuments, uploadDocument, getDocumentUrl } from '../services/documentService';
 
 export default function ProfilePage() {
   const { user, settings, replaceUser } = useAuth();
@@ -13,6 +14,8 @@ export default function ProfilePage() {
   const [balances, setBalances] = useState([]);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
+  const [photoMessage, setPhotoMessage] = useState('');
+  const [photoMessageTone, setPhotoMessageTone] = useState('success');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordMessageTone, setPasswordMessageTone] = useState('success');
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -28,6 +31,8 @@ export default function ProfilePage() {
   const [passwordVisibility, setPasswordVisibility] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
   const canEditFullProfile = user?.role === 'ceo';
   const isProfileEditable = isEditingProfile;
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!user?.id) {
@@ -49,6 +54,26 @@ export default function ProfilePage() {
         setIsEditingProfile(false);
       })
       .catch(console.error);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setProfilePhotoUrl('');
+      return;
+    }
+
+    const load = () => {
+      fetchDocuments({ userId: user.id })
+        .then((documents) => {
+          const photo = documents.find((doc) => doc.folderType === 'profile');
+          setProfilePhotoUrl(photo ? getDocumentUrl(photo.id, true) : '');
+        })
+        .catch(() => setProfilePhotoUrl(''));
+    };
+
+    load();
+    window.addEventListener('documents-seen-updated', load);
+    return () => window.removeEventListener('documents-seen-updated', load);
   }, [user?.id]);
 
   const visibleBalances = useMemo(
@@ -121,6 +146,32 @@ export default function ProfilePage() {
     } catch (error) {
       setMessageTone('error');
       setMessage(error.response?.data?.message || 'Unable to update your profile right now.');
+    }
+  };
+
+  const handleUploadProfilePhoto = async (event) => {
+    const file = event.target.files?.[0];
+    try {
+      setPhotoMessage('');
+      setPhotoMessageTone('success');
+      if (!file) return;
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        setPhotoMessageTone('error');
+        setPhotoMessage('Please upload a JPG, PNG, or WEBP image.');
+        return;
+      }
+      const doc = await uploadDocument({ file, folderType: 'profile' });
+      setProfilePhotoUrl(getDocumentUrl(doc.id, true));
+      setPhotoMessageTone('success');
+      setPhotoMessage('Profile photo uploaded successfully.');
+    } catch (error) {
+      setPhotoMessageTone('error');
+      setPhotoMessage(error.response?.data?.message || 'Unable to upload your profile photo.');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -234,6 +285,18 @@ export default function ProfilePage() {
         </SectionCard>
 
         <div className="space-y-6">
+          <SectionCard title="Profile photo" subtitle="Upload your profile photo. This will appear on the top-right profile chip only.">
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 overflow-hidden rounded-2xl bg-slate-200">
+                {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" className="h-full w-full object-cover" /> : null}
+              </div>
+              <div className="flex items-center gap-3">
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadProfilePhoto} />
+                <button type="button" className="rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-medium text-white shadow-lg" onClick={() => fileInputRef.current?.click()}>Upload photo</button>
+                {photoMessage ? <span className={`text-sm ${photoMessageTone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>{photoMessage}</span> : null}
+              </div>
+            </div>
+          </SectionCard>
           {canEditFullProfile ? (
             <SectionCard title="Change password" subtitle="Update your CEO account password securely.">
               <form className="space-y-4" onSubmit={handlePasswordSubmit}>

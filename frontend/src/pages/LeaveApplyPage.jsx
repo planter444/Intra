@@ -21,12 +21,13 @@ const initialForm = {
 const getToday = () => new Date().toISOString().split('T')[0];
 
 const calculateRequestedDays = (startDate, endDate) => {
-  if (!startDate || !endDate) {
+  if (!startDate) {
     return 0;
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const effectiveEnd = endDate || startDate;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${effectiveEnd}T00:00:00`);
   const diff = end.getTime() - start.getTime();
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diff < 0) {
@@ -114,10 +115,6 @@ export default function LeaveApplyPage() {
 
     if (!form.leaveTypeCode || !form.startDate || !form.endDate || !form.reason.trim()) {
       return 'Leave type, dates, and reason are required.';
-    }
-
-    if (form.startDate < getToday()) {
-      return 'Leave requests cannot start in the past.';
     }
 
     if (form.endDate < form.startDate) {
@@ -224,11 +221,26 @@ export default function LeaveApplyPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Start date</label>
-                <input type="date" min={getToday()} value={form.startDate} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} required />
+                <input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(event) => setForm((current) => {
+                    const nextStart = event.target.value;
+                    const nextEnd = current.endDate && current.endDate >= nextStart ? current.endDate : nextStart;
+                    return { ...current, startDate: nextStart, endDate: nextEnd };
+                  })}
+                  required
+                />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">End date</label>
-                <input type="date" min={form.startDate || getToday()} value={form.endDate} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} required />
+                <input
+                  type="date"
+                  value={form.endDate}
+                  min={form.startDate || undefined}
+                  onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
+                  required
+                />
               </div>
             </div>
 

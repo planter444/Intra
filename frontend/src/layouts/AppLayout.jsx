@@ -3,9 +3,10 @@ import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, Shiel
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
-import { fetchDocuments } from '../services/documentService';
+import { fetchDocuments, getDocumentUrl } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
 import { getPendingReviewCount } from '../utils/leave';
+import { getRedesignedTheme, isRedesignedActive, withOpacity } from '../hooks/usePagePresentation';
 
 const SEEN_DOCUMENT_IDS_KEY = 'kerea_hrms_seen_document_ids';
 const getSeenDocumentIdsStorageKey = (userId) => `${SEEN_DOCUMENT_IDS_KEY}_${userId}`;
@@ -52,7 +53,10 @@ export default function AppLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const location = useLocation();
+  const redesignedActive = isRedesignedActive(settings);
+  const redesignedTheme = redesignedActive ? getRedesignedTheme(settings) : null;
   const roleDisplay = user?.role === 'hr' || user?.role === 'ceo'
     ? 'CEO'
     : user?.role?.toUpperCase();
@@ -119,12 +123,47 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('documents-seen-updated', refreshDocumentNotifications);
   }, [user?.id, user?.role]);
 
+  useEffect(() => {
+    if (!user?.id) {
+      setProfilePhotoUrl('');
+      return;
+    }
+
+    const load = () => {
+      fetchDocuments({ userId: user.id })
+        .then((documents) => {
+          const photo = documents.find((doc) => doc.folderType === 'profile');
+          setProfilePhotoUrl(photo ? getDocumentUrl(photo.id, true) : '');
+        })
+        .catch(() => setProfilePhotoUrl(''));
+    };
+
+    load();
+    window.addEventListener('documents-seen-updated', load);
+    return () => window.removeEventListener('documents-seen-updated', load);
+  }, [user?.id]);
+
+  const backgroundUrl = useMemo(() => {
+    const src = settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '';
+    const match = String(src).match(/^document:(\d+)$/i);
+    if (match) {
+      return getDocumentUrl(match[1], true);
+    }
+    return src;
+  }, [settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl]);
+
   const closeMobile = () => setMobileOpen(false);
 
   return (
-    <div className="min-h-screen bg-surface-page text-text-primary">
-      <div className="flex min-h-screen overflow-x-hidden">
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform bg-brand-gradient px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+    <div className="relative min-h-screen text-text-primary" style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, backgroundSize: backgroundUrl ? 'cover' : undefined, backgroundPosition: backgroundUrl ? 'center' : undefined, backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined, backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined }}>
+      {redesignedActive ? (
+        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity(redesignedTheme?.overlayColor || '#0b2e13', redesignedTheme?.overlayOpacity ?? 0.45) }} />
+      ) : null}
+      <div className="relative flex min-h-screen overflow-x-hidden">
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${redesignedActive ? '' : 'bg-brand-gradient'}`}
+          style={redesignedActive ? { backgroundImage: `linear-gradient(135deg, ${redesignedTheme?.sidebarGradientFrom || '#14532d'}, ${redesignedTheme?.sidebarGradientTo || '#22c55e'})` } : undefined}
+        >
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
               <BrandLogo
@@ -160,21 +199,31 @@ export default function AppLayout({ children }) {
                   key={item.key}
                   to={item.path}
                   onClick={closeMobile}
-                  className={({ isActive }) => `flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${isActive ? 'bg-white text-emerald-900 shadow-lg' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
+                  className={({ isActive }) => `rounded-2xl text-sm font-medium transition ${isActive ? 'text-white ring-2 ring-white/70 shadow-[0_0_0_2px_rgba(255,255,255,0.25)] bg-white/10' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
                 >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="w-4 text-center"><Icon size={16} /></span>
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {item.key === 'leaves' && pendingReviewCount > 0 ? (
-                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
-                      +{pendingReviewCount}
-                    </span>
-                  ) : item.key === 'documents' && documentNotificationCount > 0 ? (
-                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
-                      +{documentNotificationCount}
-                    </span>
-                  ) : null}
+                  {({ isActive }) => (
+                    <div className="flex items-center justify-between gap-3 px-4 py-3">
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span className={`grid h-7 w-7 place-items-center rounded-xl border ${isActive ? 'border-white/60 bg-white/20 text-white' : 'border-white/20 bg-white/10 text-white/90'} backdrop-blur-sm`}>
+                          <Icon size={16} />
+                        </span>
+                        <span className="truncate">{item.label}</span>
+                      </span>
+
+                      <span className="relative flex items-center gap-2">
+                        {item.key === 'leaves' && pendingReviewCount > 0 ? (
+                          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingReviewCount}</span>
+                        ) : item.key === 'documents' && documentNotificationCount > 0 ? (
+                          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{documentNotificationCount}</span>
+                        ) : null}
+                        {redesignedActive ? (
+                          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border backdrop-blur-sm ${isActive ? 'border-white/70 bg-white/80 text-emerald-900' : 'border-white/20 bg-white/15 text-white'}`}>
+                            <Icon size={14} />
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  )}
                 </NavLink>
               );
             })}
@@ -190,7 +239,7 @@ export default function AppLayout({ children }) {
         </aside>
 
         <div className="app-layout-desktop-offset flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur md:px-8">
+          <header className={`sticky top-0 z-30 ${redesignedActive ? 'border-white/30 bg-white/25 backdrop-blur-xl' : 'border-b border-slate-200 bg-white/90 backdrop-blur'} px-4 py-4 md:px-8`}>
             <div className="flex min-w-0 items-center justify-between gap-3 sm:gap-4">
               <div className="flex min-w-0 items-center gap-3">
                 <button
@@ -208,8 +257,12 @@ export default function AppLayout({ children }) {
                 </div>
               </div>
               <Link to="/profile" className="flex shrink-0 items-center gap-3 rounded-2xl bg-brand-gradient px-3 py-2 text-white shadow-lg sm:px-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-gradient text-white shadow">
-                  <User size={16} />
+                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white/10 text-white shadow">
+                  {profilePhotoUrl ? (
+                    <img src={profilePhotoUrl} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <User size={16} />
+                  )}
                 </div>
                 <div className="hidden text-right sm:block">
                   <p className="text-sm font-semibold text-white">{user?.fullName}</p>
