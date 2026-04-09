@@ -71,11 +71,25 @@ const getSystemSettings = async () => {
   const leaveTypes = await leaveModel.listLeaveTypes();
   const mergedPayload = mergeSettings(defaultSettings, normalizeLegacyPayload(settings?.payload || {}));
 
+  const categoryTypes = Array.isArray(mergedPayload.documentCategories)
+    ? mergedPayload.documentCategories.flatMap((cat) => Array.isArray(cat?.types) ? cat.types : [])
+    : [];
+  const baseFolders = Array.isArray(mergedPayload.folders) && mergedPayload.folders.length ? mergedPayload.folders : defaultSettings.folders;
+  const folderSeen = new Set();
+  const folders = [...baseFolders, ...categoryTypes].reduce((acc, entry) => {
+    const code = String(entry?.code || '').trim().toLowerCase();
+    const label = String(entry?.label || '').trim() || code;
+    if (!code || folderSeen.has(code)) return acc;
+    folderSeen.add(code);
+    acc.push({ code, label });
+    return acc;
+  }, []);
+
   return {
     ...mergedPayload,
     departments: departments.length ? departments : defaultSettings.departments,
     roleTitles: Array.isArray(mergedPayload.roleTitles) && mergedPayload.roleTitles.length ? mergedPayload.roleTitles : defaultSettings.roleTitles,
-    folders: Array.isArray(mergedPayload.folders) && mergedPayload.folders.length ? mergedPayload.folders : defaultSettings.folders,
+    folders,
     leaveTypes: leaveTypes.length ? leaveTypes : defaultSettings.leaveTypes
   };
 };

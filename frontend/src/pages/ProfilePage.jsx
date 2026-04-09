@@ -337,24 +337,26 @@ export default function ProfilePage() {
             </SectionCard>
           ) : null}
 
-          <SectionCard title="Leave balances" subtitle="Live policy balances pulled from PostgreSQL.">
-            <div className="space-y-3">
-              {visibleBalances.map((balance) => (
-                <div key={balance.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="font-medium text-slate-800">{balance.label}</p>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">{balance.code}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-semibold text-slate-900">{balance.balanceDays}</p>
-                      <p className="text-xs text-slate-500">Used {balance.usedDays}</p>
+          {user?.role !== 'ceo' ? (
+            <SectionCard title="Leave balances" subtitle="Live policy balances pulled from PostgreSQL.">
+              <div className="space-y-3">
+                {visibleBalances.map((balance) => (
+                  <div key={balance.id} className="rounded-2xl border border-slate-200 px-4 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-medium text-slate-800">{balance.label}</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">{balance.code}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold text-slate-900">{balance.balanceDays}</p>
+                        <p className="text-xs text-slate-500">Used {balance.usedDays}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
         </div>
       </div>
     </div>

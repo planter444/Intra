@@ -143,19 +143,47 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('documents-seen-updated', load);
   }, [user?.id]);
 
+  const pageKey = useMemo(() => {
+    const path = location.pathname || '';
+    const entries = Object.entries(routeMap);
+    const found = entries.find(([key, value]) => path.startsWith(value));
+    return found ? found[0] : 'dashboard';
+  }, [location.pathname]);
+
   const backgroundUrl = useMemo(() => {
-    const src = settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '';
-    const match = String(src).match(/^document:(\d+)$/i);
+    const bgs = settings?.interface?.backgrounds || {};
+    const variantKey = redesignedActive ? 'redesigned' : 'original';
+    const perPage = bgs?.[variantKey]?.perPage || {};
+    let src = perPage?.[pageKey];
+    if (src === '') {
+      return '';
+    }
+    if (!src) {
+      src = bgs?.[variantKey]?.defaultImageUrl || (redesignedActive ? (settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '') : '');
+    }
+    const match = String(src || '').match(/^document:(\d+)$/i);
     if (match) {
       return getDocumentUrl(match[1], true);
     }
-    return src;
-  }, [settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl]);
+    return src || '';
+  }, [settings?.interface?.backgrounds, settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl, redesignedActive, pageKey]);
+
+  const backgroundImageOpacity = useMemo(() => {
+    const value = Number(settings?.interface?.backgrounds?.imageOpacity ?? 1);
+    if (Number.isNaN(value)) return 1;
+    return Math.min(1, Math.max(0, value));
+  }, [settings?.interface?.backgrounds?.imageOpacity]);
+
+  const navigationActiveColor = settings?.interface?.navigationActiveColor || '#fef08a';
+  const nonCardTextColor = settings?.interface?.nonCardTextColor || undefined;
 
   const closeMobile = () => setMobileOpen(false);
 
   return (
-    <div className="relative min-h-screen text-text-primary" style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, backgroundSize: backgroundUrl ? 'cover' : undefined, backgroundPosition: backgroundUrl ? 'center' : undefined, backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined, backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined }}>
+    <div className="relative min-h-screen text-text-primary" style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, backgroundAttachment: backgroundUrl ? 'fixed' : undefined, backgroundSize: backgroundUrl ? 'contain' : undefined, backgroundPosition: backgroundUrl ? 'top center' : undefined, backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined, backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined, color: nonCardTextColor }}>
+      {backgroundUrl ? (
+        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity('#ffffff', 1 - backgroundImageOpacity) }} />
+      ) : null}
       {redesignedActive ? (
         <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity(redesignedTheme?.overlayColor || '#0b2e13', redesignedTheme?.overlayOpacity ?? 0.45) }} />
       ) : null}
@@ -199,12 +227,13 @@ export default function AppLayout({ children }) {
                   key={item.key}
                   to={item.path}
                   onClick={closeMobile}
-                  className={({ isActive }) => `rounded-2xl text-sm font-medium transition ${isActive ? 'text-white ring-2 ring-white/70 shadow-[0_0_0_2px_rgba(255,255,255,0.25)] bg-white/10' : 'text-white/90 hover:bg-white/15 hover:text-white'}`}
+                  className={({ isActive }) => `group rounded-2xl text-sm font-medium transition ${isActive ? '' : 'text-white/90 hover:bg-white/12 hover:text-white hover:shadow-[0_0_12px_rgba(255,255,255,0.12)]'}`}
+                  style={({ isActive }) => isActive ? { color: navigationActiveColor, backgroundColor: withOpacity(navigationActiveColor, 0.18), boxShadow: `0 0 16px ${withOpacity(navigationActiveColor, 0.26)}` } : undefined}
                 >
                   {({ isActive }) => (
                     <div className="flex items-center justify-between gap-3 px-4 py-3">
                       <span className="flex min-w-0 items-center gap-3">
-                        <span className={`grid h-7 w-7 place-items-center rounded-xl border ${isActive ? 'border-white/60 bg-white/20 text-white' : 'border-white/20 bg-white/10 text-white/90'} backdrop-blur-sm`}>
+                        <span className={`grid h-7 w-7 place-items-center rounded-xl border ${isActive ? 'border-white/60 bg-white/20 text-current' : 'border-white/20 bg-white/10 text-white/90 group-hover:border-white/40 group-hover:bg-white/15'} backdrop-blur-sm`}>
                           <Icon size={16} />
                         </span>
                         <span className="truncate">{item.label}</span>
@@ -217,7 +246,7 @@ export default function AppLayout({ children }) {
                           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{documentNotificationCount}</span>
                         ) : null}
                         {redesignedActive ? (
-                          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border backdrop-blur-sm ${isActive ? 'border-white/70 bg-white/80 text-emerald-900' : 'border-white/20 bg-white/15 text-white'}`}>
+                          <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border backdrop-blur-sm ${isActive ? 'border-white/70 bg-white/80 text-emerald-900' : 'border-white/20 bg-white/15 text-white group-hover:border-white/40 group-hover:bg-white/20'}`}>
                             <Icon size={14} />
                           </span>
                         ) : null}

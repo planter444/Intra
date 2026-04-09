@@ -84,6 +84,38 @@ module.exports = {
       login: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
       settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
     },
+    // Background configuration: separate images for Original vs Redesigned UI, optional per-page overrides, and global opacity
+    backgrounds: {
+      original: {
+        defaultImageUrl: '',
+        perPage: {
+          dashboard: '',
+          employees: '',
+          profile: '',
+          documents: '',
+          leave: '',
+          settings: '',
+          audit: ''
+        }
+      },
+      redesigned: {
+        defaultImageUrl: '',
+        perPage: {
+          dashboard: '',
+          employees: '',
+          profile: '',
+          documents: '',
+          leave: '',
+          settings: '',
+          audit: ''
+        }
+      },
+      imageOpacity: 1
+    },
+    // Active navigation item color (e.g., a warm yellow)
+    navigationActiveColor: '#fef08a',
+    // Non-card text color to improve readability when background images are present
+    nonCardTextColor: '' ,
     uiVariant: {
       active: 'original',
       applyTo: 'all',
@@ -122,6 +154,44 @@ module.exports = {
     { code: 'branding', label: 'Branding' },
     { code: 'profile', label: 'Profile Photos' },
     { code: 'other', label: 'Other' }
+  ],
+  documentCategories: [
+    {
+      code: 'personal',
+      label: 'Personal Documents',
+      types: [
+        { code: 'id', label: 'National ID' },
+        { code: 'passport', label: 'Passport' },
+        { code: 'driver_license', label: 'Driver License' }
+      ]
+    },
+    {
+      code: 'academic',
+      label: 'Academic Certificates',
+      types: [
+        { code: 'degree', label: 'Degree Certificate' },
+        { code: 'diploma', label: 'Diploma' },
+        { code: 'transcript', label: 'Transcript' }
+      ]
+    },
+    {
+      code: 'statutory',
+      label: 'Statutory Documents',
+      types: [
+        { code: 'nhif', label: 'NHIF' },
+        { code: 'nssf', label: 'NSSF' },
+        { code: 'kra_pin', label: 'KRA PIN' }
+      ]
+    },
+    {
+      code: 'employment',
+      label: 'Employment',
+      types: [
+        { code: 'offer_letter', label: 'Offer Letter' },
+        { code: 'contract', label: 'Contract Letter' },
+        { code: 'warning', label: 'Warning Letter' }
+      ]
+    }
   ],
   leaveTypes: [
     { code: 'annual', label: 'Annual Leave', defaultDays: 21, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: true },

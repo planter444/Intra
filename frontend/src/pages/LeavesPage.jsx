@@ -44,8 +44,9 @@ export default function LeavesPage() {
   const { user, settings } = useAuth();
   const [balances, setBalances] = useState([]);
   const [requests, setRequests] = useState([]);
-  const canApplyForLeave = user?.role !== 'ceo';
-  const showPersonalHistory = user?.role !== 'ceo';
+  const isCeo = user?.role === 'ceo';
+  const canApplyForLeave = !isCeo;
+  const showPersonalHistory = !isCeo;
 
   useEffect(() => {
     Promise.all([fetchLeaveBalances(), fetchLeaveRequests()])
@@ -101,10 +102,28 @@ export default function LeavesPage() {
           </button>
         ] : undefined}
       />
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} />)}
-      </div>
+      {isCeo ? (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {(settings?.leaveTypes || []).map((lt, index) => (
+            <div key={lt.code || lt.label || index} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{lt.label}</p>
+                  <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{lt.defaultDays}</p>
+                  <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">default days</p>
+                </div>
+                <div className="rounded-2xl bg-white/70 p-3 text-slate-700 shadow-sm">
+                  <CalendarDays size={18} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} />)}
+        </div>
+      )}
 
       <div className={showPersonalHistory && user?.role !== 'supervisor' ? 'grid gap-6 lg:grid-cols-[minmax(0,1.15fr),minmax(0,1fr)]' : 'space-y-6'}>
         {showPersonalHistory ? (

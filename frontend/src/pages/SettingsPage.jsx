@@ -46,7 +46,6 @@ export default function SettingsPage() {
   const isCeoOnly = user?.role === 'ceo';
   const availablePages = isCeoOnly
     ? [
-        ['ui', 'UI Variant'],
         ['employees', 'Employees Page'],
         ['documents', 'Documents Page'],
         ['leave', 'Leave Page']
@@ -54,6 +53,7 @@ export default function SettingsPage() {
     : [
         ['branding', 'Branding'],
         ['ui', 'UI Variant'],
+        ['backgrounds', 'Backgrounds'],
         ['dashboard', 'Dashboard'],
         ['login', 'Login Page'],
         ['navigation', 'Navigation'],
@@ -64,7 +64,7 @@ export default function SettingsPage() {
       ];
   const [draft, setDraft] = useState(() => clone(settings || {}));
   const [message, setMessage] = useState('');
-  const [activePage, setActivePage] = useState(isCeoOnly ? 'ui' : 'branding');
+  const [activePage, setActivePage] = useState(isCeoOnly ? 'employees' : 'branding');
   const [leaveTypeEditor, setLeaveTypeEditor] = useState({ open: false, index: null, form: emptyLeaveTypeForm });
   const employeesSectionRef = useRef(null);
   const leaveSectionRef = useRef(null);
@@ -73,6 +73,10 @@ export default function SettingsPage() {
   const folderInputRefs = useRef([]);
   const faviconInputRef = useRef(null);
   const bgUploadInputRef = useRef(null);
+  const bgOriginalDefaultRef = useRef(null);
+  const bgRedesignedDefaultRef = useRef(null);
+  const bgPerPageUploadRef = useRef(null);
+  const [bgPendingTarget, setBgPendingTarget] = useState({ variant: 'original', pageKey: '' });
 
   useEffect(() => {
     if (settings) {
@@ -97,6 +101,7 @@ export default function SettingsPage() {
   const departments = useMemo(() => (draft.departments || []).filter((department) => department?.name !== 'Human Resources'), [draft]);
   const roleTitles = useMemo(() => draft.roleTitles || [], [draft]);
   const folders = useMemo(() => draft.folders || [], [draft]);
+  const documentCategories = useMemo(() => draft.documentCategories || [], [draft]);
   const leaveTypes = useMemo(() => draft.leaveTypes || [], [draft]);
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft || {}) !== JSON.stringify(settings || {}),
@@ -113,6 +118,22 @@ export default function SettingsPage() {
         [key]: value
       }
     }));
+  };
+
+  const handleUploadPerPageBackground = async (variant, pageKey, file) => {
+    if (!file) return;
+    try {
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        setMessage('Please upload a JPG, PNG, or WEBP image.');
+        return;
+      }
+      const doc = await uploadDocument({ file, folderType: 'branding' });
+      setBackgroundValue(variant, pageKey, `document:${doc.id}`);
+      setMessage('Background image uploaded. Click Save settings to apply.');
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to upload background image.');
+    }
   };
 
   const handleUploadRedesignedBackground = async (event) => {
@@ -250,6 +271,95 @@ export default function SettingsPage() {
     }));
   };
 
+  const setBackgrounds = (updater) => {
+    setDraft((current) => ({
+      ...current,
+      interface: {
+        ...current.interface,
+        backgrounds: updater(current.interface?.backgrounds || {})
+      }
+    }));
+  };
+
+  const setBackgroundValue = (variant, pageKey, value) => {
+    setBackgrounds((bg) => ({
+      ...bg,
+      [variant]: {
+        ...(bg?.[variant] || {}),
+        perPage: { ...(bg?.[variant]?.perPage || {}), [pageKey]: value }
+      }
+    }));
+  };
+
+  const handleUploadDefaultBackground = async (variant, file) => {
+    if (!file) return;
+    try {
+      const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        setMessage('Please upload a JPG, PNG, or WEBP image.');
+        return;
+      }
+      const doc = await uploadDocument({ file, folderType: 'branding' });
+      setBackgrounds((bg) => ({
+        ...bg,
+        [variant]: { ...(bg?.[variant] || {}), defaultImageUrl: `document:${doc.id}` }
+      }));
+      setMessage('Background image uploaded. Click Save settings to apply.');
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Unable to upload background image.');
+    }
+  };
+
+  const addDocumentCategory = () => {
+    setDraft((current) => ({
+      ...current,
+      documentCategories: [...(current.documentCategories || []), { code: '', label: '', types: [] }]
+    }));
+  };
+
+  const removeDocumentCategory = (index) => {
+    const name = (draft.documentCategories || [])[index]?.label || 'this folder type';
+    if (!window.confirm(`Remove ${name}?`)) {
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      documentCategories: (current.documentCategories || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateDocumentCategory = (index, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      documentCategories: (current.documentCategories || []).map((item, i) => i === index ? { ...item, [key]: value } : item)
+    }));
+  };
+
+  const addDocumentType = (catIndex) => {
+    setDraft((current) => ({
+      ...current,
+      documentCategories: (current.documentCategories || []).map((cat, i) => i === catIndex ? { ...cat, types: [...(cat.types || []), { code: '', label: '' }] } : cat)
+    }));
+  };
+
+  const updateDocumentType = (catIndex, typeIndex, key, value) => {
+    setDraft((current) => ({
+      ...current,
+      documentCategories: (current.documentCategories || []).map((cat, i) => i === catIndex ? { ...cat, types: (cat.types || []).map((t, j) => j === typeIndex ? { ...t, [key]: value } : t) } : cat)
+    }));
+  };
+
+  const removeDocumentType = (catIndex, typeIndex) => {
+    const typeName = (draft.documentCategories?.[catIndex]?.types?.[typeIndex]?.label) || 'this label';
+    if (!window.confirm(`Remove ${typeName}?`)) {
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      documentCategories: (current.documentCategories || []).map((cat, i) => i === catIndex ? { ...cat, types: (cat.types || []).filter((_, j) => j !== typeIndex) } : cat)
+    }));
+  };
+
   const updateRoleTitle = (index, value) => {
     setDraft((current) => ({
       ...current,
@@ -325,14 +435,18 @@ export default function SettingsPage() {
   };
 
   const saveLeaveTypeEditor = () => {
-    if (!leaveTypeEditor.form.label.trim() || !leaveTypeEditor.form.code.trim()) {
-      setMessage('Leave type name and code are required.');
+    if (!leaveTypeEditor.form.label.trim()) {
+      setMessage('Leave type name is required.');
       return;
     }
 
+    const derivedCode = (leaveTypeEditor.form.code?.trim() || leaveTypeEditor.form.label.trim())
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '');
+
     setDraft((current) => {
       const nextLeaveType = {
-        code: leaveTypeEditor.form.code.trim().toLowerCase(),
+        code: derivedCode,
         label: leaveTypeEditor.form.label.trim(),
         defaultDays: Number(leaveTypeEditor.form.defaultDays || 0),
         requiresCeoApproval: Boolean(leaveTypeEditor.form.requiresCeoApproval),
@@ -373,13 +487,34 @@ export default function SettingsPage() {
       return accumulator;
     }, []);
     const normalizedFolders = (draft.folders || []).reduce((accumulator, folder) => {
-      const code = String(folder?.code || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
       const label = String(folder?.label || '').trim();
+      const rawCode = String(folder?.code || '').trim();
+      const code = (rawCode || label).toLowerCase().replace(/[^a-z0-9_-]/g, '');
       if (!code || !label || accumulator.some((item) => item.code === code)) {
         return accumulator;
       }
       accumulator.push({ code, label });
       return accumulator;
+    }, []);
+    const normalizedCategories = (draft.documentCategories || []).reduce((acc, cat) => {
+      const catLabel = String(cat?.label || '').trim();
+      const catCodeRaw = String(cat?.code || '').trim();
+      const catCode = (catCodeRaw || catLabel).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (!catCode || !catLabel || acc.some((c) => c.code === catCode)) {
+        return acc;
+      }
+      const types = (cat.types || []).reduce((tAcc, t) => {
+        const tLabel = String(t?.label || '').trim();
+        const tCodeRaw = String(t?.code || '').trim();
+        const tCode = (tCodeRaw || tLabel).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (!tCode || !tLabel || tAcc.some((x) => x.code === tCode)) {
+          return tAcc;
+        }
+        tAcc.push({ code: tCode, label: tLabel });
+        return tAcc;
+      }, []);
+      acc.push({ code: catCode, label: catLabel, types });
+      return acc;
     }, []);
     const normalizedPageExperience = Object.entries(draft.interface?.pageExperience || {}).reduce((accumulator, [pageKey, config]) => {
       accumulator[pageKey] = {
@@ -398,6 +533,19 @@ export default function SettingsPage() {
       mobileMenuAnimationType: ['slide', 'fade', 'scale'].includes(draft.interface?.mobileMenuAnimationType) ? draft.interface.mobileMenuAnimationType : 'slide',
       mobileMenuAnimationDurationMs: Math.max(120, Number(draft.interface?.mobileMenuAnimationDurationMs || 260)),
       pageExperience: normalizedPageExperience,
+      backgrounds: {
+        original: {
+          defaultImageUrl: String(draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => [k, String((draft.interface?.backgrounds?.original?.perPage || {})[k] ?? '').trim()]))
+        },
+        redesigned: {
+          defaultImageUrl: String(draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => [k, String((draft.interface?.backgrounds?.redesigned?.perPage || {})[k] ?? '').trim()]))
+        },
+        imageOpacity: Math.min(1, Math.max(0, Number(draft.interface?.backgrounds?.imageOpacity ?? 1)))
+      },
+      navigationActiveColor: String(draft.interface?.navigationActiveColor || '#fef08a').trim() || '#fef08a',
+      nonCardTextColor: String(draft.interface?.nonCardTextColor || '').trim(),
       uiVariant: {
         active: ['original', 'redesigned'].includes(draft.interface?.uiVariant?.active) ? draft.interface.uiVariant.active : 'original',
         applyTo: ['all', 'small_only', 'large_only'].includes(draft.interface?.uiVariant?.applyTo) ? draft.interface.uiVariant.applyTo : 'all',
@@ -419,6 +567,7 @@ export default function SettingsPage() {
           departments: normalizedDepartments,
           roleTitles: normalizedRoleTitles,
           folders: normalizedFolders,
+          documentCategories: normalizedCategories,
           leaveTypes: draft.leaveTypes,
           labels: {
             employeeDirectoryTitle: draft.labels?.employeeDirectoryTitle || '',
@@ -426,14 +575,14 @@ export default function SettingsPage() {
             leaveModuleTitle: draft.labels?.leaveModuleTitle || '',
             documentsModuleTitle: draft.labels?.documentsModuleTitle || '',
             documentsSubtitle: draft.labels?.documentsSubtitle || ''
-          },
-          interface: normalizedInterface
+          }
         }
       : {
           ...draft,
           departments: normalizedDepartments,
           roleTitles: normalizedRoleTitles,
           folders: normalizedFolders,
+          documentCategories: normalizedCategories,
           interface: normalizedInterface
         };
 
@@ -576,6 +725,70 @@ export default function SettingsPage() {
                 <input type="number" min="0" max="40" value={draft.interface?.uiVariant?.redesignedTheme?.glassBlurPx ?? 14} onChange={(e) => setRedesignedThemeField('glassBlurPx', e.target.value)} />
               </div>
               <SettingsInput label="Card Text Color" value={draft.interface?.uiVariant?.redesignedTheme?.cardTextColor || '#0f172a'} onChange={(v) => setRedesignedThemeField('cardTextColor', v)} colorPicker />
+            </div>
+          </SectionCard>
+
+          
+        </div>
+      ) : null}
+
+      {!isCeoOnly && activePage === 'backgrounds' ? (
+        <div className="space-y-6">
+          <SectionCard title="Global background options" subtitle="Control general behavior that applies to both Original and Redesigned UIs.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Background image opacity</label>
+                <input type="number" min="0" max="1" step="0.05" value={draft.interface?.backgrounds?.imageOpacity ?? 1} onChange={(e) => setBackgrounds((bg) => ({ ...bg, imageOpacity: e.target.value }))} />
+              </div>
+              <SettingsInput label="Active menu color" value={draft.interface?.navigationActiveColor || '#fef08a'} onChange={(v) => setInterfaceField('navigationActiveColor', v)} colorPicker />
+              <SettingsInput label="Non-card text color" value={draft.interface?.nonCardTextColor || ''} onChange={(v) => setInterfaceField('nonCardTextColor', v)} colorPicker />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Default background images" subtitle="Set separate defaults for the Original UI and the Redesigned UI.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-1">
+                <label className="mb-2 block text-sm font-medium text-slate-700">Original UI default</label>
+                <div className="flex items-center gap-3">
+                  <input value={draft.interface?.backgrounds?.original?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, original: { ...(bg?.original || {}), defaultImageUrl: e.target.value } }))} />
+                  <input ref={bgOriginalDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('original', f); e.target.value=''; }} />
+                  <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgOriginalDefaultRef.current?.click()}>Upload</button>
+                </div>
+              </div>
+              <div className="md:col-span-1">
+                <label className="mb-2 block text-sm font-medium text-slate-700">Redesigned UI default</label>
+                <div className="flex items-center gap-3">
+                  <input value={draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, redesigned: { ...(bg?.redesigned || {}), defaultImageUrl: e.target.value } }))} />
+                  <input ref={bgRedesignedDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('redesigned', f); e.target.value=''; }} />
+                  <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgRedesignedDefaultRef.current?.click()}>Upload</button>
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Per-page overrides" subtitle="Optionally set a different background image per page. Leave blank to use the default. Set to an empty value to remove the background on that page.">
+            <div className="space-y-4">
+              <input ref={bgPerPageUploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPerPageBackground(bgPendingTarget.variant, bgPendingTarget.pageKey, f); e.target.value=''; }} />
+              {['dashboard','employees','profile','documents','leave','settings','audit'].map((page) => (
+                <div key={page} className="grid gap-3 md:grid-cols-[minmax(0,1fr),minmax(0,1fr)]">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Original UI</label>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1" value={draft.interface?.backgrounds?.original?.perPage?.[page] ?? ''} onChange={(e) => setBackgroundValue('original', page, e.target.value)} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'original', pageKey: page }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('original', page, '')}>Clear</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Redesigned UI</label>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1" value={draft.interface?.backgrounds?.redesigned?.perPage?.[page] ?? ''} onChange={(e) => setBackgroundValue('redesigned', page, e.target.value)} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'redesigned', pageKey: page }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('redesigned', page, '')}>Clear</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </SectionCard>
         </div>
@@ -948,33 +1161,33 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Folder types" subtitle="Create the folder types that appear in the document upload dropdown." actions={[
-            <button
-              key="add-folder"
-              type="button"
-              onClick={handleAddFolder}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              Add Folder
-            </button>
+          <SectionCard title="Document categories" subtitle="Define folder types with nested labels (e.g., Folder Type: Personal; Labels: Passport, National ID). Codes are generated automatically from names." actions={[
+            <button key="add-cat" type="button" onClick={addDocumentCategory} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Add Category</button>,
+            <button key="save-doc-cats" type="button" onClick={handleSave} className="rounded-xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-lg">Save changes</button>
           ]}>
             <div className="space-y-4">
-              {folders.map((folder, index) => (
-                <div key={`${folder.code}-${index}`} className="rounded-2xl border border-slate-200 p-4">
-                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),120px]">
+              {documentCategories.map((cat, cIndex) => (
+                <div key={`${cat.code}-${cIndex}`} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),120px]">
                     <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">Code</label>
-                      <input ref={(element) => { folderInputRefs.current[index] = element; }} value={folder.code || ''} onChange={(event) => updateFolder(index, 'code', event.target.value)} placeholder="e.g. payroll" />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700">Label</label>
-                      <input value={folder.label || ''} onChange={(event) => updateFolder(index, 'label', event.target.value)} placeholder="e.g. Payroll" />
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Folder type name</label>
+                      <input value={cat.label || ''} onChange={(e) => updateDocumentCategory(cIndex, 'label', e.target.value)} placeholder="e.g. Personal Documents" />
                     </div>
                     <div className="flex items-end">
-                      <button type="button" className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700" onClick={() => handleRemoveFolder(index)}>
-                        Remove
-                      </button>
+                      <button type="button" className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700" onClick={() => removeDocumentCategory(cIndex)}>Remove</button>
                     </div>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-slate-700">Labels under this folder type</p>
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={() => addDocumentType(cIndex)}>Add Label</button>
+                    </div>
+                    {(cat.types || []).map((t, tIndex) => (
+                      <div key={`${t.code}-${tIndex}`} className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[minmax(0,1fr),100px]">
+                        <input value={t.label || ''} onChange={(e) => updateDocumentType(cIndex, tIndex, 'label', e.target.value)} placeholder="e.g. Passport" />
+                        <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={() => removeDocumentType(cIndex, tIndex)}>Remove</button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -1070,10 +1283,7 @@ export default function SettingsPage() {
                 <label className="mb-2 block text-sm font-medium text-slate-700">Name</label>
                 <input ref={leaveTypeNameInputRef} value={leaveTypeEditor.form.label} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, label: event.target.value } }))} />
               </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">Code</label>
-                <input value={leaveTypeEditor.form.code} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, code: event.target.value } }))} />
-              </div>
+              
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Days Allowed</label>
                 <input type="number" min="0" value={leaveTypeEditor.form.defaultDays} onChange={(event) => setLeaveTypeEditor((current) => ({ ...current, form: { ...current.form, defaultDays: Number(event.target.value) } }))} />

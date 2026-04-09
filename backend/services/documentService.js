@@ -41,9 +41,12 @@ const getCloudinaryClient = () => {
 
 const getConfiguredFolders = async () => {
   const settings = await settingsModel.getGlobal();
-  // Union DB-configured folders with defaults to guarantee essential folders (branding, profile) are present.
+  // Union DB-configured folders with defaults and any category-defined types
+  const categories = Array.isArray(settings?.payload?.documentCategories) ? settings.payload.documentCategories : [];
+  const categoryTypes = categories.flatMap((cat) => Array.isArray(cat?.types) ? cat.types : []);
   const sourceFolders = [
     ...(Array.isArray(settings?.payload?.folders) ? settings.payload.folders : []),
+    ...categoryTypes,
     ...defaultSettings.folders
   ];
 

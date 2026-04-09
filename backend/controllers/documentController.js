@@ -164,11 +164,11 @@ const deleteDocument = async (req, res, next) => {
       return res.status(404).json({ message: 'Document not found.' });
     }
 
-    if (!['admin', 'ceo'].includes(req.user.role)) {
-      return res.status(403).json({ message: 'You do not have permission to delete this document.' });
-    }
-
-    if (req.user.role !== 'ceo' && String(document.userId) !== String(req.user.id)) {
+    const isOwner = String(document.userId) === String(req.user.id);
+    const isAdmin = req.user.role === 'admin';
+    const isCeo = req.user.role === 'ceo';
+    const canDelete = isCeo || isAdmin || isOwner;
+    if (!canDelete) {
       return res.status(403).json({ message: 'You do not have permission to delete this document.' });
     }
 

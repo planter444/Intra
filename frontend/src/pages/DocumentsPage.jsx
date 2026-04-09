@@ -24,12 +24,19 @@ const getDocumentTypeLabel = (document) => {
 const formatDocumentSizeMb = (size) => `${Math.max(1, Math.round(Number(size || 0) / (1024 * 1024) || 0))} MB`;
 const createEmptyPreviewState = () => ({ open: false, loading: false, objectUrl: '', fileName: '', mimeType: '', documentId: '', error: '' });
 
+// Extract custom category/label if the filename starts with a tag like: [Category - Label] OriginalName.ext
+const parseCustomLabelFromFileName = (fileName = '') => {
+  const match = String(fileName || '').match(/^\[([^\]-]+)\s*-\s*([^\]]+)\]\s*/);
+  if (!match) return null;
+  return { category: match[1].trim(), label: match[2].trim() };
+};
+
 export default function DocumentsPage() {
   const { user, settings } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState('success');
-  const [uploadState, setUploadState] = useState({ folderType: 'id', userId: '', employeeName: '', file: null });
+  const [uploadState, setUploadState] = useState({ folderType: 'id', folderCategoryCode: '', folderLabelCode: '', customCategoryText: '', customLabelText: '', userId: '', employeeName: '', file: null });
   const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -41,15 +48,24 @@ export default function DocumentsPage() {
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
     [settings?.folders]
   );
+  const documentCategories = useMemo(() => settings?.documentCategories || [], [settings?.documentCategories]);
+  const folderLabelMap = useMemo(() => {
+    const map = new Map();
+    (settings?.folders || []).forEach((f) => { if (f?.code) map.set(f.code, f.label || f.code); });
+    (settings?.documentCategories || []).forEach((cat) => {
+      (cat?.types || []).forEach((t) => { if (t?.code) map.set(t.code, t.label || t.code); });
+    });
+    return Object.fromEntries(map);
+  }, [settings?.folders, settings?.documentCategories]);
 
   useUnsavedChangesGuard(Boolean(uploadState.file || uploadState.employeeName || uploadState.userId));
 
   useEffect(() => {
-    const defaultFolderCode = folderOptions[0]?.code || 'id';
-    if (!folderOptions.some((folder) => folder.code === uploadState.folderType)) {
-      setUploadState((current) => ({ ...current, folderType: defaultFolderCode }));
+    const defaultCategory = (documentCategories[0]?.code) || '';
+    if (!uploadState.folderCategoryCode) {
+      setUploadState((c) => ({ ...c, folderCategoryCode: defaultCategory, folderLabelCode: (documentCategories[0]?.types?.[0]?.code) || '' }));
     }
-  }, [folderOptions, uploadState.folderType]);
+  }, [documentCategories, uploadState.folderCategoryCode]);
 
   const employeeMatch = useMemo(
     () => employees.find((employee) => employee.fullName.toLowerCase() === uploadState.employeeName.trim().toLowerCase()),
@@ -117,14 +133,25 @@ export default function DocumentsPage() {
     }
 
     try {
+      // Resolve final folderType from selected label or fall back to 'other'
+      const selectedCategory = documentCategories.find((c) => c.code === uploadState.folderCategoryCode);
+      const selectedType = (selectedCategory?.types || []).find((t) => t.code === uploadState.folderLabelCode);
+      const finalFolderType = selectedType?.code || 'other';
+
+      // If uploading to 'Other', embed the custom labels in the filename for display later
+      const needsCustomTags = finalFolderType === 'other' && (uploadState.customCategoryText || uploadState.customLabelText);
+      const sendFile = needsCustomTags
+        ? new File([uploadState.file], `[${(uploadState.customCategoryText || 'Other').trim()} - ${(uploadState.customLabelText || 'Other').trim()}] ${uploadState.file.name}`.trim(), { type: uploadState.file.type })
+        : uploadState.file;
+
       await uploadDocument({
-        file: uploadState.file,
-        folderType: uploadState.folderType,
-        userId: uploadState.userId || employeeMatch?.id || undefined
+        file: sendFile,
+        folderType: finalFolderType,
+        userId: (canManageEmployeeDocuments && selectedEmployeeId) ? selectedEmployeeId : (uploadState.userId || employeeMatch?.id || undefined)
       });
       setMessageTone('success');
       setMessage('Document uploaded successfully.');
-      setUploadState((current) => ({ ...current, file: null, employeeName: '', userId: '' }));
+      setUploadState((current) => ({ ...current, file: null, employeeName: '', userId: '', folderLabelCode: '', customCategoryText: '', customLabelText: '' }));
       event.target.reset();
       await loadDocuments();
     } catch (error) {
@@ -134,12 +161,14 @@ export default function DocumentsPage() {
   };
 
   const visibleDocuments = useMemo(
-    () => documents.map((document) => ({
-      ...document,
-      isNew: user.role === 'ceo'
-        ? seenIdsReady && String(document.uploadedBy) !== String(user.id) && !seenDocumentIds.map(String).includes(String(document.id))
-        : false
-    })).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
+    () => documents
+      .filter((doc) => doc.folderType !== 'profile')
+      .map((document) => ({
+        ...document,
+        isNew: user.role === 'ceo'
+          ? seenIdsReady && String(document.uploadedBy) !== String(user.id) && !seenDocumentIds.map(String).includes(String(document.id))
+          : false
+      })).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
     [documents, seenDocumentIds, seenIdsReady, user.id, user.role]
   );
 
@@ -197,6 +226,17 @@ export default function DocumentsPage() {
     () => visibleDocuments.filter((document) => String(document.userId) === String(selectedEmployeeId)),
     [selectedEmployeeId, visibleDocuments]
   );
+  const documentsByCategory = useMemo(() => {
+    const map = new Map();
+    documentCategories.forEach((cat) => map.set(cat.code, []));
+    selectedFolderDocuments.forEach((doc) => {
+      const found = documentCategories.find((cat) => (cat.types || []).some((t) => t.code === doc.folderType));
+      const key = found ? found.code : 'uncategorized';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(doc);
+    });
+    return map;
+  }, [documentCategories, selectedFolderDocuments]);
 
   useEffect(() => {
     if (user.role !== 'ceo' || !selectedEmployeeId) {
@@ -320,7 +360,7 @@ export default function DocumentsPage() {
       {message ? <div className={`rounded-2xl px-4 py-3 text-sm ${messageTone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{message}</div> : null}
 
       <div className="space-y-6">
-        <SectionCard title="Upload document" subtitle={`Folders: ${(folderOptions.length ? folderOptions.map((folder) => folder.label).join(', ') : 'No folders configured yet')}.`}>
+        <SectionCard title="Upload document" subtitle={`Folder types: ${(documentCategories.length ? documentCategories.map((c) => c.label).join(', ') : 'No folder types configured yet')}.`}>
           <form className="space-y-4" onSubmit={handleUpload}>
             {canManageEmployeeDocuments ? (
               <div>
@@ -333,20 +373,46 @@ export default function DocumentsPage() {
                 </datalist>
               </div>
             ) : null}
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">Folder type</label>
-              <select value={uploadState.folderType} onChange={(event) => setUploadState((current) => ({ ...current, folderType: event.target.value }))}>
-                {folderOptions.map((folder) => (
-                  <option key={folder.code} value={folder.code}>{folder.label}</option>
-                ))}
-              </select>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Folder type</label>
+                <select value={uploadState.folderCategoryCode} onChange={(e) => {
+                  const nextCode = e.target.value;
+                  if (nextCode === '__other') {
+                    setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: '__otherLabel' }));
+                    return;
+                  }
+                  const firstType = (documentCategories.find((c) => c.code === nextCode)?.types || [])[0]?.code || '';
+                  setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: firstType }));
+                }}>
+                  {documentCategories.map((cat) => (
+                    <option key={cat.code} value={cat.code}>{cat.label}</option>
+                  ))}
+                  <option value="__other">Other…</option>
+                </select>
+                {uploadState.folderCategoryCode === '__other' ? (
+                  <input className="mt-2" placeholder="Enter folder type" value={uploadState.customCategoryText} onChange={(e) => setUploadState((c) => ({ ...c, customCategoryText: e.target.value }))} />
+                ) : null}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Label</label>
+                <select value={uploadState.folderLabelCode} onChange={(e) => setUploadState((c) => ({ ...c, folderLabelCode: e.target.value }))}>
+                  {(documentCategories.find((c) => c.code === uploadState.folderCategoryCode)?.types || []).map((t) => (
+                    <option key={t.code} value={t.code}>{t.label}</option>
+                  ))}
+                  <option value="__otherLabel">Other…</option>
+                </select>
+                {uploadState.folderLabelCode === '__otherLabel' ? (
+                  <input className="mt-2" placeholder="Enter label" value={uploadState.customLabelText} onChange={(e) => setUploadState((c) => ({ ...c, customLabelText: e.target.value }))} />
+                ) : null}
+              </div>
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">File</label>
               <input type="file" onChange={(event) => setUploadState((current) => ({ ...current, file: event.target.files?.[0] || null }))} />
             </div>
             <button type="submit" className="w-full rounded-2xl bg-brand-gradient px-4 py-3 text-sm font-semibold text-white shadow-lg">
-              Upload document
+              {canManageEmployeeDocuments && selectedEmployeeId ? 'Upload document to employee' : 'Upload document'}
             </button>
           </form>
         </SectionCard>
@@ -400,11 +466,11 @@ export default function DocumentsPage() {
                 columns={[
                   {
                     key: 'fileName',
-                    header: 'File name',
+                    header: 'Document type',
                     render: (row) => (
                       <div className={row.isNew ? 'rounded-2xl bg-amber-50 px-3 py-2' : ''}>
-                        <p className="font-medium text-slate-900">{row.fileName}</p>
-                        <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{row.folderType}</p>
+                        <p className="font-medium text-slate-900">{(() => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); })()}</p>
+                        <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{row.fileName}</p>
                       </div>
                     )
                   },
@@ -428,7 +494,7 @@ export default function DocumentsPage() {
                         }}>
                           Download
                         </button>
-                        {canManageEmployeeDocuments ? (
+                        {canManageEmployeeDocuments || String(row.userId) === String(user.id) ? (
                           <button type="button" className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={(event) => {
                             event.stopPropagation();
                             handleDelete(row);
@@ -447,6 +513,38 @@ export default function DocumentsPage() {
                 })}
                 emptyLabel={canManageEmployeeDocuments ? 'No documents were found in this folder.' : 'No documents found.'}
               />
+              {canManageEmployeeDocuments ? (
+                <div className="space-y-6">
+                  {Array.from(documentsByCategory.entries()).map(([catCode, docs]) => {
+                    const cat = documentCategories.find((c) => c.code === catCode);
+                    if (!docs.length) return null;
+                    return (
+                      <div key={catCode} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h4 className="text-base font-semibold text-slate-900">{cat ? cat.label : 'Other Documents'}</h4>
+                          <span className="text-xs text-slate-500">{docs.length} item(s)</span>
+                        </div>
+                        <DataTable
+                          columns={[
+                            { key: 'type', header: 'Type', render: (row) => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); } },
+                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
+                            { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() },
+                            { key: 'actions', header: 'Actions', render: (row) => (
+                              <div className="flex flex-wrap gap-2">
+                                <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(e) => { e.stopPropagation(); handlePreview(row); }}>Preview</button>
+                                <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={(e) => { e.stopPropagation(); handleDownload(row.id); }}>Download</button>
+                              </div>
+                            ) }
+                          ]}
+                          rows={docs}
+                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: 'cursor-pointer transition hover:bg-slate-50' })}
+                          emptyLabel="No documents in this category."
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           )}
         </SectionCard>

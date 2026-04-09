@@ -6,6 +6,7 @@ import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import { fetchDashboardSummary } from '../services/dashboardService';
 import { useAuth } from '../context/AuthContext';
+import { usePagePresentation } from '../hooks/usePagePresentation';
 
 export default function DashboardPage() {
   const { user, settings } = useAuth();
@@ -24,6 +25,13 @@ export default function DashboardPage() {
     fetchDashboardSummary().then(setSummary).catch(console.error);
   }, []);
 
+  // Animation styles per card so the icon bubble follows the same page load style
+  const iconAnim0 = usePagePresentation({ animationOrder: 0 }).animationStyle;
+  const iconAnim1 = usePagePresentation({ animationOrder: 1 }).animationStyle;
+  const iconAnim2 = usePagePresentation({ animationOrder: 2 }).animationStyle;
+  const iconAnim3 = usePagePresentation({ animationOrder: 3 }).animationStyle;
+  const iconAnim4 = usePagePresentation({ animationOrder: 4 }).animationStyle;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -35,28 +43,28 @@ export default function DashboardPage() {
         {canViewOrgMetrics ? (
           <div className="relative">
             <StatCard title="Total Headcount" value={summary?.headcount ?? '--'} helper="Active non-deleted users" onClick={canOpenEmployees ? () => navigate('/employees') : undefined} />
-            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-emerald-700 to-emerald-500 p-3 text-white shadow-sm"><Users size={18} /></div>
+            <div className="pointer-events-none absolute -right-2 -top-2 rounded-2xl bg-gradient-to-br from-emerald-700 to-emerald-500 p-3 text-white shadow-sm sm:right-3 sm:top-3" style={iconAnim0}><Users size={18} /></div>
           </div>
         ) : null}
         {canViewOrgMetrics ? (
           <div className="relative">
             <StatCard title="Pending Leave Actions" value={summary?.pendingLeaves ?? '--'} helper="Awaiting executive review" accent="from-amber-600 to-orange-500" onClick={() => navigate('/leaves')} />
-            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-amber-600 to-orange-500 p-3 text-white shadow-sm"><ClipboardList size={18} /></div>
+            <div className="pointer-events-none absolute -right-2 -top-2 rounded-2xl bg-gradient-to-br from-amber-600 to-orange-500 p-3 text-white shadow-sm sm:right-3 sm:top-3" style={iconAnim1}><ClipboardList size={18} /></div>
           </div>
         ) : null}
         {canViewOrgMetrics ? (
           <div className="relative">
             <StatCard title="Approved Leave Requests" value={summary?.approvedLeaves ?? '--'} helper="Completed approvals" accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
-            <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm"><CheckCircle size={18} /></div>
+            <div className="pointer-events-none absolute -right-2 -top-2 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm sm:right-3 sm:top-3" style={iconAnim2}><CheckCircle size={18} /></div>
           </div>
         ) : null}
         <div className="relative">
           <StatCard title={leaveSummaryTitle} value={summary?.myLeaveBalanceTypes ?? '--'} helper={leaveSummaryHelper} accent="from-blue-700 to-cyan-500" onClick={() => navigate('/leaves')} />
-          <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm"><CalendarDays size={18} /></div>
+          <div className="pointer-events-none absolute -right-2 -top-2 rounded-2xl bg-gradient-to-br from-blue-700 to-cyan-500 p-3 text-white shadow-sm sm:right-3 sm:top-3" style={iconAnim3}><CalendarDays size={18} /></div>
         </div>
         <div className="relative">
           <StatCard title={documentSummaryTitle} value={summary?.myDocuments ?? '--'} helper={documentSummaryHelper} accent="from-violet-700 to-fuchsia-500" onClick={canOpenDocuments ? () => navigate('/documents') : undefined} />
-          <div className="absolute right-3 top-3 rounded-2xl bg-gradient-to-br from-violet-700 to-fuchsia-500 p-3 text-white shadow-sm"><FileText size={18} /></div>
+          <div className="pointer-events-none absolute -right-2 -top-2 rounded-2xl bg-gradient-to-br from-violet-700 to-fuchsia-500 p-3 text-white shadow-sm sm:right-3 sm:top-3" style={iconAnim4}><FileText size={18} /></div>
         </div>
       </div>
 

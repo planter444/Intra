@@ -43,7 +43,10 @@ const start = async () => {
     hashPassword
   });
 
-  app.use(helmet());
+  app.use(helmet({
+    crossOriginResourcePolicy: false,
+    crossOriginEmbedderPolicy: false
+  }));
   app.use(cors({ origin: env.frontendUrl, credentials: false }));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
