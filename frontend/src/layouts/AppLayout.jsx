@@ -245,17 +245,18 @@ export default function AppLayout({ children }) {
       backgroundPosition: backgroundUrl ? 'center center' : undefined,
       backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined,
       backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined,
-      '--card-text-color': redesignedTheme?.cardTextColor || '#0f172a'
+      '--card-text-color': redesignedTheme?.cardTextColor || '#0f172a',
+      overscrollBehaviorY: isMobile ? 'none' : undefined
     }}>
       {isMobile && backgroundUrl ? (
         <div className="fixed inset-0 -z-10" style={{ backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundRepeat: 'no-repeat' }} />
       ) : null}
       
       {backgroundUrl ? (
-        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity('#ffffff', 1 - backgroundImageOpacity) }} />
+        <div className={`pointer-events-none ${isMobile ? 'fixed' : 'absolute'} inset-0`} style={{ backgroundColor: withOpacity('#ffffff', 1 - backgroundImageOpacity) }} />
       ) : null}
       {redesignedActive ? (
-        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity(redesignedTheme?.overlayColor || '#0b2e13', redesignedTheme?.overlayOpacity ?? 0.45) }} />
+        <div className={`pointer-events-none ${isMobile ? 'fixed' : 'absolute'} inset-0`} style={{ backgroundColor: withOpacity(redesignedTheme?.overlayColor || '#0b2e13', redesignedTheme?.overlayOpacity ?? 0.45) }} />
       ) : null}
       <div className="relative flex min-h-screen overflow-x-hidden">
         <aside
