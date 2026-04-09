@@ -2,15 +2,17 @@ const styles = {
   employee: 'bg-emerald-50 text-emerald-700',
   supervisor: 'bg-cyan-50 text-cyan-700',
   admin: 'bg-purple-50 text-purple-700',
-  ceo: 'bg-amber-50 text-amber-700'
+  ceo: 'bg-amber-50 text-amber-700',
+  finance: 'bg-blue-50 text-blue-700'
 };
 
 export default function RoleBadge({ role, roleTitle }) {
   const labels = {
     employee: roleTitle || 'Employee',
     supervisor: 'Supervisor',
-    admin: 'Admin',
-    ceo: 'CEO'
+    admin: 'IT Officer',
+    ceo: 'CEO',
+    finance: 'Finance'
   };
 
   return (

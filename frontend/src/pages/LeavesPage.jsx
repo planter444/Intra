@@ -20,6 +20,24 @@ const accentClasses = [
   'from-cyan-500/15 to-cyan-100'
 ];
 
+function CeoLeaveTypeCard({ lt, index, opacity = 1 }) {
+  const { animationStyle } = usePagePresentation({ animationOrder: index + 1 });
+  return (
+    <div className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={{ ...animationStyle, opacity }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-700">{lt.label}</p>
+          <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{lt.defaultDays}</p>
+          <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">default days</p>
+        </div>
+        <div className="rounded-2xl bg-white/70 p-3 text-slate-700 shadow-sm">
+          <CalendarDays size={18} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LeaveBalanceCard({ balance, index, myRequests, opacity = 1 }) {
   const { animationStyle } = usePagePresentation({ animationOrder: index + 1 });
 
@@ -106,18 +124,7 @@ export default function LeavesPage() {
       {isCeo ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {(settings?.leaveTypes || []).map((lt, index) => (
-            <div key={lt.code || lt.label || index} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={{ opacity: leaveCardsOpacity }}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">{lt.label}</p>
-                  <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{lt.defaultDays}</p>
-                  <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">default days</p>
-                </div>
-                <div className="rounded-2xl bg-white/70 p-3 text-slate-700 shadow-sm">
-                  <CalendarDays size={18} />
-                </div>
-              </div>
-            </div>
+            <CeoLeaveTypeCard key={lt.code || lt.label || index} lt={lt} index={index} opacity={leaveCardsOpacity} />
           ))}
         </div>
       ) : (

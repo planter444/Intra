@@ -1,12 +1,12 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, User, Users, X } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments, getDocumentUrl } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
 import { getPendingReviewCount } from '../utils/leave';
-import { getRedesignedTheme, isRedesignedActive, withOpacity } from '../hooks/usePagePresentation';
+import { getRedesignedTheme, isRedesignedActive, resolvePagePresentationKey, withOpacity } from '../hooks/usePagePresentation';
 
 const SEEN_DOCUMENT_IDS_KEY = 'kerea_hrms_seen_document_ids';
 const getSeenDocumentIdsStorageKey = (userId) => `${SEEN_DOCUMENT_IDS_KEY}_${userId}`;
@@ -18,7 +18,9 @@ const routeMap = {
   leaves: '/leaves',
   documents: '/documents',
   settings: '/settings',
-  audit: '/audit-logs'
+  audit: '/audit-logs',
+  kpi: '/kpi-matrix',
+  performance: '/performance-dashboard'
 };
 
 const labelKeyMap = {
@@ -27,7 +29,9 @@ const labelKeyMap = {
   leaves: 'navigationLeaves',
   documents: 'navigationDocuments',
   settings: 'navigationSettings',
-  audit: 'navigationAudit'
+  audit: 'navigationAudit',
+  kpi: 'navigationKpiMatrix',
+  performance: 'navigationPerformance'
 };
 
 const iconMap = {
@@ -37,7 +41,9 @@ const iconMap = {
   leaves: ClipboardList,
   documents: FileText,
   settings: Settings,
-  audit: ShieldCheck
+  audit: ShieldCheck,
+  kpi: Table,
+  performance: BarChart2
 };
 
 const defaultNavigationByRole = {
@@ -45,7 +51,8 @@ const defaultNavigationByRole = {
   supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   admin: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'audit'],
-  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings']
+  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'kpi', 'performance'],
+  finance: ['dashboard', 'kpi', 'performance', 'settings']
 };
 
 export default function AppLayout({ children }) {
@@ -58,8 +65,9 @@ export default function AppLayout({ children }) {
   const location = useLocation();
   const redesignedActive = isRedesignedActive(settings);
   const redesignedTheme = redesignedActive ? getRedesignedTheme(settings) : null;
-  const roleDisplay = user?.role === 'hr' || user?.role === 'ceo'
-    ? 'CEO'
+  const roleDisplay = user?.role === 'admin' ? 'IT Officer'
+    : user?.role === 'finance' ? 'Finance Officer'
+    : (user?.role === 'hr' || user?.role === 'ceo') ? 'CEO'
     : user?.role?.toUpperCase();
   const mobileMenuOpenStyle = {
     backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
@@ -155,43 +163,44 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('documents-seen-updated', load);
   }, [user?.id]);
 
-  const pageKey = useMemo(() => {
-    const path = location.pathname || '';
-    const entries = Object.entries(routeMap);
-    const found = entries.find(([key, value]) => path.startsWith(value));
-    return found ? found[0] : 'dashboard';
-  }, [location.pathname]);
+  // Unified page key resolution across the app (matches SettingsPage keys)
+  const pageKey = useMemo(() => resolvePagePresentationKey(location.pathname), [location.pathname]);
 
   const backgroundUrl = useMemo(() => {
     const bgs = settings?.interface?.backgrounds || {};
-    const variantKey = redesignedActive ? 'redesigned' : 'original';
-    const cfg = bgs?.[variantKey] || {};
-    const perPage = cfg?.perPage || {};
-    const pageValue = perPage?.[pageKey];
+    const currentVariant = redesignedActive ? 'redesigned' : 'original';
+    const altVariant = redesignedActive ? 'original' : 'redesigned';
 
-    const pick = (value) => {
-      if (!value && value !== '') return '';
-      if (value === '') return '';
-      if (typeof value === 'object' && value) {
-        const chosen = isMobile ? value.mobile : value.desktop;
-        return chosen || '';
+    const pickFromConfig = (cfg, key) => {
+      const perPage = cfg?.perPage || {};
+      const value = perPage?.[key];
+      const pick = (input) => {
+        if (!input && input !== '') return '';
+        if (input === '') return '';
+        if (typeof input === 'object' && input) {
+          const chosen = isMobile ? input.mobile : input.desktop;
+          return chosen || '';
+        }
+        return input || '';
+      };
+      let src = pick(value);
+      if (!src && src !== '') {
+        const defDesktop = cfg.defaultDesktopUrl || cfg.defaultImageUrl || (currentVariant === 'redesigned' ? (settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '') : '');
+        const defMobile = cfg.defaultMobileUrl || cfg.defaultImageUrl || defDesktop;
+        src = isMobile ? defMobile : defDesktop;
       }
-      return value || '';
+      return src || '';
     };
 
-    let src = pick(pageValue);
-    if (!src && src !== '') {
-      const defDesktop = cfg.defaultDesktopUrl || cfg.defaultImageUrl || (redesignedActive ? (settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '') : '');
-      const defMobile = cfg.defaultMobileUrl || cfg.defaultImageUrl || defDesktop;
-      src = isMobile ? defMobile : defDesktop;
-    }
-
-    if (src === '') return '';
-    const match = String(src || '').match(/^document:(\d+)$/i);
+    // Try current variant, else fall back to alternate variant using the unified page key
+    const srcCurrent = pickFromConfig(bgs?.[currentVariant] || {}, pageKey);
+    const source = srcCurrent || pickFromConfig(bgs?.[altVariant] || {}, pageKey);
+    if (source === '') return '';
+    const match = String(source || '').match(/^document:(\d+)$/i);
     if (match) {
       return getDocumentUrl(match[1], true);
     }
-    return src || '';
+    return source || '';
   }, [settings?.interface?.backgrounds, settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl, redesignedActive, pageKey, isMobile]);
 
   const backgroundImageOpacity = useMemo(() => {
@@ -199,6 +208,24 @@ export default function AppLayout({ children }) {
     if (Number.isNaN(value)) return 1;
     return Math.min(1, Math.max(0, value));
   }, [settings?.interface?.backgrounds?.imageOpacity]);
+
+  // Preload high-priority background image for faster first paint
+  useEffect(() => {
+    if (!backgroundUrl) return undefined;
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.fetchPriority = 'high';
+    link.href = backgroundUrl;
+    document.head.appendChild(link);
+    const img = new Image();
+    img.decoding = 'async';
+    img.loading = 'eager';
+    img.src = backgroundUrl;
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, [backgroundUrl]);
 
   const navigationActiveColor = settings?.interface?.navigationActiveColor || '#fef08a';
 
@@ -249,7 +276,7 @@ export default function AppLayout({ children }) {
       overscrollBehaviorY: isMobile ? 'none' : undefined
     }}>
       {isMobile && backgroundUrl ? (
-        <div className="fixed inset-0 -z-10" style={{ backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundRepeat: 'no-repeat' }} />
+        <div className="fixed inset-0 -z-10" style={{ backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundRepeat: 'no-repeat', willChange: 'transform' }} />
       ) : null}
       
       {backgroundUrl ? (

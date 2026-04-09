@@ -22,7 +22,7 @@ const PAGE_PRESENTATION_OPTIONS = [
   ['zoom-in', 'Zoom In'],
   ['soft-blur', 'Soft Blur']
 ];
-const PAGE_PRESENTATION_KEYS = ['dashboard', 'login', 'employees', 'profile', 'documents', 'leave'];
+const PAGE_PRESENTATION_KEYS = ['dashboard', 'login', 'employees', 'profile', 'documents', 'leave', 'kpi', 'performance'];
 const isHexColor = (value) => /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(String(value || '').trim());
 
 function SettingsInput({ label, value, onChange, colorPicker = false }) {
@@ -45,14 +45,24 @@ export default function SettingsPage() {
   const { settings, replaceSettings, user } = useAuth();
   const navigate = useNavigate();
   const isCeoOnly = user?.role === 'ceo';
+  const isFinanceOnly = user?.role === 'finance';
   const availablePages = isCeoOnly
     ? [
         ['employees', 'Employees Page'],
         ['documents', 'Documents Page'],
         ['leave', 'Leave Page'],
+        ['kpi', 'KPI Matrix Page'],
+        ['performance', 'Performance Dashboard'],
+        ['backgrounds', 'Backgrounds'],
         ['leaves_cleanup', 'Delete Leave Requests']
       ]
-    : [
+    : isFinanceOnly
+      ? [
+          ['kpi', 'KPI Matrix Page'],
+          ['performance', 'Performance Dashboard'],
+          ['backgrounds', 'Backgrounds']
+        ]
+      : [
         ['branding', 'Branding'],
         ['ui', 'UI Variant'],
         ['backgrounds', 'Backgrounds'],
@@ -62,11 +72,13 @@ export default function SettingsPage() {
         ['employees', 'Employees Page'],
         ['profile', 'Profile Page'],
         ['documents', 'Documents Page'],
-        ['leave', 'Leave Page']
+        ['leave', 'Leave Page'],
+        ['kpi', 'KPI Matrix Page'],
+        ['performance', 'Performance Dashboard']
       ];
   const [draft, setDraft] = useState(() => clone(settings || {}));
   const [message, setMessage] = useState('');
-  const [activePage, setActivePage] = useState(isCeoOnly ? 'employees' : 'branding');
+  const [activePage, setActivePage] = useState(isCeoOnly ? 'employees' : isFinanceOnly ? 'kpi' : 'branding');
   const [leaveTypeEditor, setLeaveTypeEditor] = useState({ open: false, index: null, form: emptyLeaveTypeForm });
   const employeesSectionRef = useRef(null);
   const leaveSectionRef = useRef(null);
@@ -94,8 +106,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (isCeoOnly) {
       setActivePage('employees');
+    } else if (isFinanceOnly) {
+      setActivePage('kpi');
     }
-  }, [isCeoOnly]);
+  }, [isCeoOnly, isFinanceOnly]);
 
   useEffect(() => {
     if (!isCeoOnly || activePage !== 'leaves_cleanup') return;
@@ -229,7 +243,7 @@ export default function SettingsPage() {
     [activePage, draft.interface?.pageExperience]
   );
 
-  const canEditPagePresentation = !isCeoOnly && PAGE_PRESENTATION_KEYS.includes(activePage);
+  const canEditPagePresentation = (!isCeoOnly && PAGE_PRESENTATION_KEYS.includes(activePage)) || (isCeoOnly && ['kpi','performance'].includes(activePage));
 
   const handleFaviconUpload = (event) => {
     const file = event.target.files?.[0];
@@ -576,7 +590,7 @@ export default function SettingsPage() {
         original: {
           defaultDesktopUrl: String(draft.interface?.backgrounds?.original?.defaultDesktopUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
           defaultMobileUrl: String(draft.interface?.backgrounds?.original?.defaultMobileUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
-          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance'].map((k) => {
             const raw = (draft.interface?.backgrounds?.original?.perPage || {})[k];
             const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(raw || '').trim() };
             return [k, { desktop: String(asObj.desktop || '').trim(), mobile: String(asObj.mobile || '').trim() }];
@@ -585,7 +599,7 @@ export default function SettingsPage() {
         redesigned: {
           defaultDesktopUrl: String(draft.interface?.backgrounds?.redesigned?.defaultDesktopUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
           defaultMobileUrl: String(draft.interface?.backgrounds?.redesigned?.defaultMobileUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
-          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance'].map((k) => {
             const raw = (draft.interface?.backgrounds?.redesigned?.perPage || {})[k];
             const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(raw || '').trim() };
             return [k, { desktop: String(asObj.desktop || '').trim(), mobile: String(asObj.mobile || '').trim() }];
@@ -594,7 +608,7 @@ export default function SettingsPage() {
         imageOpacity: Math.min(1, Math.max(0, Number(draft.interface?.backgrounds?.imageOpacity ?? 1)))
       },
       navigationActiveColor: String(draft.interface?.navigationActiveColor || '#fef08a').trim() || '#fef08a',
-      pageHeaderColors: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+      pageHeaderColors: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance'].map((k) => {
         const v = (draft.interface?.pageHeaderColors || {})[k] || {};
         return [k, { title: String(v.title || '').trim(), subtitle: String(v.subtitle || '').trim() }];
       })),
@@ -673,7 +687,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={isCeoOnly ? 'CEO Settings' : 'Admin System Settings'}
+        title={isCeoOnly ? 'CEO Settings' : 'IT Officer System Settings'}
         subtitle={isCeoOnly ? 'Manage employee-page settings, departments, and leave settings.' : 'Edit major page content, colors, labels, and core HRMS settings from one place.'}
         actions={[
           !isCeoOnly ? (
@@ -847,7 +861,7 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
-      {!isCeoOnly && activePage === 'backgrounds' ? (
+      {activePage === 'backgrounds' ? (
         <div className="space-y-6">
           <SectionCard title="Global background options" subtitle="Control general behavior that applies to both Original and Redesigned UIs.">
             <div className="grid gap-4 md:grid-cols-2">
@@ -861,7 +875,7 @@ export default function SettingsPage() {
 
           <SectionCard title="Page header colors per page" subtitle="Set distinct title and subtitle colors for each page header.">
             <div className="grid gap-4 md:grid-cols-2">
-              {['dashboard','employees','profile','documents','leave','settings','audit'].map((page) => (
+              {(user?.role === 'finance' || user?.role === 'ceo' ? ['kpi','performance'] : ['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance']).map((page) => (
                 <div key={page} className="rounded-2xl border border-slate-200 bg-white p-4">
                   <h4 className="text-sm font-semibold text-slate-900">{page[0].toUpperCase()+page.slice(1)}</h4>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -965,7 +979,7 @@ export default function SettingsPage() {
           <SectionCard title="Per-page overrides" subtitle="Optionally set different Desktop and Mobile backgrounds per page for each UI.">
             <div className="space-y-4">
               <input ref={bgPerPageUploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPerPageBackground(bgPendingTarget.variant, bgPendingTarget.pageKey, f, bgPendingTarget.device); e.target.value=''; }} />
-              {['dashboard','employees','profile','documents','leave','settings','audit'].map((page) => (
+              {(user?.role === 'finance' || user?.role === 'ceo' ? ['kpi','performance'] : ['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance']).map((page) => (
                 <div key={page} className="grid gap-3 md:grid-cols-[minmax(0,1fr),minmax(0,1fr)]">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Original UI (Desktop)</label>
@@ -1283,7 +1297,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               {departments.map((department, index) => (
-                <div key={`${department.name}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                <div key={`dept-${index}`} className="rounded-2xl border border-slate-200 p-4">
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),minmax(0,1fr),120px]">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700">Name</label>
@@ -1307,7 +1321,7 @@ export default function SettingsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-base font-semibold text-slate-900">Role titles</h3>
-                      <p className="mt-1 text-sm text-slate-500">Create extra employee titles that appear in the Role dropdown. CEO, Admin, and Supervisor remain the only permission-based system roles.</p>
+                      <p className="mt-1 text-sm text-slate-500">Create extra employee titles that appear in the Role dropdown. CEO, IT Officer, and Supervisor remain the only permission-based system roles.</p>
                     </div>
                     <button
                       type="button"
@@ -1320,7 +1334,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-4">
                   {roleTitles.length ? roleTitles.map((roleTitle, index) => (
-                    <div key={`${roleTitle.value}-${index}`} className="rounded-2xl border border-slate-200 p-4">
+                    <div key={`role-${index}`} className="rounded-2xl border border-slate-200 p-4">
                       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),120px]">
                         <div>
                           <label className="mb-2 block text-sm font-medium text-slate-700">Title</label>

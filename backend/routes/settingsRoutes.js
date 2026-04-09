@@ -6,7 +6,7 @@ const { authorize } = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 router.get('/', authenticate, getSettings);
-router.patch('/', authenticate, authorize('admin', 'ceo'), updateSettings);
+router.patch('/', authenticate, authorize('admin', 'ceo', 'finance'), updateSettings);
 router.post('/restore', authenticate, authorize('admin'), restoreSettings);
 
 module.exports = router;

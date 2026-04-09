@@ -14,6 +14,8 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import SettingsPage from './pages/SettingsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import NotFoundPage from './pages/NotFoundPage';
+import KPIMatrixPage from './pages/KPIMatrixPage';
+import PerformanceDashboard from './pages/PerformanceDashboard';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, loading, user } = useAuth();
@@ -62,7 +64,9 @@ export default function App() {
       <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
       <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DocumentsPage /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo']}><SettingsPage /></ProtectedRoute>} />
+      <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['ceo', 'finance']}><KPIMatrixPage /></ProtectedRoute>} />
+      <Route path="/performance-dashboard" element={<ProtectedRoute allowedRoles={['ceo', 'finance']}><PerformanceDashboard /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><SettingsPage /></ProtectedRoute>} />
       <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AuditLogsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

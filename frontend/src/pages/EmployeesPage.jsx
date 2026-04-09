@@ -11,8 +11,9 @@ import { createUser, fetchUsers, resetUserPassword, softDeleteUser, updateUser }
 const EMPLOYEE_ROLE_SELECTION_PREFIX = 'title:';
 const privilegedRoleOptions = [
   { value: 'supervisor', role: 'supervisor', roleTitle: 'Supervisor', label: 'Supervisor' },
-  { value: 'admin', role: 'admin', roleTitle: 'Admin', label: 'Admin' },
-  { value: 'ceo', role: 'ceo', roleTitle: 'CEO', label: 'CEO' }
+  { value: 'admin', role: 'admin', roleTitle: 'IT Officer', label: 'IT Officer' },
+  { value: 'ceo', role: 'ceo', roleTitle: 'CEO', label: 'CEO' },
+  { value: 'finance', role: 'finance', roleTitle: 'Finance', label: 'Finance' }
 ];
 
 const normalizeRoleTitleValue = (value) => String(value || '').trim() || 'Employee';

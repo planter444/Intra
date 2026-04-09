@@ -8,6 +8,8 @@ const fallbackPageExperience = {
   profile: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
   documents: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
   leave: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+  kpi: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+  performance: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
   login: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
   settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
 };
@@ -109,6 +111,12 @@ export const resolvePagePresentationKey = (pathname = '') => {
   }
   if (pathname.startsWith('/leaves')) {
     return 'leave';
+  }
+  if (pathname.startsWith('/kpi-matrix')) {
+    return 'kpi';
+  }
+  if (pathname.startsWith('/performance-dashboard')) {
+    return 'performance';
   }
   if (pathname.startsWith('/settings') || pathname.startsWith('/audit-logs')) {
     return 'settings';

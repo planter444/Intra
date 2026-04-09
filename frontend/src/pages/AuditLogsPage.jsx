@@ -15,7 +15,7 @@ export default function AuditLogsPage() {
     <div className="space-y-6">
       <PageHeader title="Audit Logs" subtitle="Critical actions are captured for traceability, accountability, and governance." />
 
-      <SectionCard title="System activity trail" subtitle="Admin-only access to immutable action history.">
+      <SectionCard title="System activity trail" subtitle="IT Officer-only access to immutable action history.">
         <DataTable
           columns={[
             { key: 'createdAt', header: 'Timestamp' },

@@ -6,13 +6,14 @@ const { comparePassword, hashPassword } = require('../services/authService');
 const { logAction } = require('../services/auditService');
 const { deleteEmployeeData } = require('../services/userDeletionService');
 
-const allowedRoles = ['employee', 'supervisor', 'admin', 'ceo'];
+const allowedRoles = ['employee', 'supervisor', 'admin', 'ceo', 'finance'];
 const allowedGenders = ['male', 'female', 'other'];
 const fixedRoleTitles = {
   employee: 'Employee',
   supervisor: 'Supervisor',
-  admin: 'Admin',
-  ceo: 'CEO'
+  admin: 'IT Officer',
+  ceo: 'CEO',
+  finance: 'Finance Officer'
 };
 
 const getAllowedRoleTitles = async () => {

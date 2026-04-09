@@ -222,7 +222,7 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, Admin, or CEO.'} />
+      <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, IT Officer, or CEO.'} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard title="Role" value={roleValue || '--'} helper="Access level currently assigned" />

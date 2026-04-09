@@ -135,8 +135,58 @@ const bootstrapSystem = async ({ ceoSeedEmail, ceoSeedPassword, hashPassword }) 
   await leaveModel.ensureLeaveBalancesForAllUsers();
 };
 
-// Admin and CEO can update the full settings payload; other roles cannot hit this route.
-const normalizeUpdatesByRole = (currentUser, updates = {}) => updates;
+// Admin and CEO can update the full settings payload. Finance can only update KPI/Performance presentation and header colors.
+const normalizeUpdatesByRole = (currentUser, updates = {}) => {
+  if (!currentUser || (currentUser.role !== 'finance')) {
+    return updates;
+  }
+
+  const safe = {};
+  // Allow interface.pageExperience for kpi and performance
+  if (updates.interface && updates.interface.pageExperience) {
+    safe.interface = safe.interface || {};
+    safe.interface.pageExperience = {};
+    if (updates.interface.pageExperience.kpi) {
+      safe.interface.pageExperience.kpi = updates.interface.pageExperience.kpi;
+    }
+    if (updates.interface.pageExperience.performance) {
+      safe.interface.pageExperience.performance = updates.interface.pageExperience.performance;
+    }
+  }
+
+  // Allow interface.pageHeaderColors for kpi/performance
+  if (updates.interface && updates.interface.pageHeaderColors) {
+    safe.interface = safe.interface || {};
+    safe.interface.pageHeaderColors = {};
+    if (updates.interface.pageHeaderColors.kpi) {
+      safe.interface.pageHeaderColors.kpi = updates.interface.pageHeaderColors.kpi;
+    }
+    if (updates.interface.pageHeaderColors.performance) {
+      safe.interface.pageHeaderColors.performance = updates.interface.pageHeaderColors.performance;
+    }
+  }
+
+  // Allow per-page backgrounds for kpi/performance for both variants
+  if (updates.interface && updates.interface.backgrounds) {
+    safe.interface = safe.interface || {};
+    safe.interface.backgrounds = {};
+    ['original', 'redesigned'].forEach((variant) => {
+      const v = updates.interface.backgrounds[variant];
+      if (v && v.perPage) {
+        safe.interface.backgrounds[variant] = safe.interface.backgrounds[variant] || {};
+        safe.interface.backgrounds[variant].perPage = {};
+        if (v.perPage.kpi !== undefined) {
+          safe.interface.backgrounds[variant].perPage.kpi = v.perPage.kpi;
+        }
+        if (v.perPage.performance !== undefined) {
+          safe.interface.backgrounds[variant].perPage.performance = v.perPage.performance;
+        }
+      }
+    });
+  }
+
+  return safe;
+};
 
 const updateSystemSettings = async ({ currentUser, updates }) => {
   const current = await settingsModel.getGlobal();

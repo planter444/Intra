@@ -71,7 +71,7 @@ const mapUser = (row) => {
     email: row.email,
     phone: row.phone,
     role: row.role,
-    roleTitle: row.role_title,
+    roleTitle: row.role === 'admin' ? 'IT Officer' : (row.role === 'finance' ? 'Finance Officer' : row.role_title),
     gender: row.gender,
     departmentId: row.department_id,
     departmentName: row.department_name === 'Human Resources' ? 'Executive Office' : row.department_name,
