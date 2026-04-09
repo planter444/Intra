@@ -43,6 +43,7 @@ export default function DocumentsPage() {
   const [seenDocumentIds, setSeenDocumentIds] = useState([]);
   const [seenIdsReady, setSeenIdsReady] = useState(user.role !== 'ceo');
   const [previewState, setPreviewState] = useState(createEmptyPreviewState);
+  const [isUploading, setIsUploading] = useState(false);
   const canManageEmployeeDocuments = user.role === 'ceo';
   const folderOptions = useMemo(
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
@@ -132,6 +133,7 @@ export default function DocumentsPage() {
       return;
     }
 
+    setIsUploading(true);
     try {
       // Resolve final folderType from selected label or fall back to 'other'
       const selectedCategory = documentCategories.find((c) => c.code === uploadState.folderCategoryCode);
@@ -157,12 +159,14 @@ export default function DocumentsPage() {
     } catch (error) {
       setMessageTone('error');
       setMessage(error.response?.data?.message || 'Unable to upload this document right now.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
   const visibleDocuments = useMemo(
     () => documents
-      .filter((doc) => doc.folderType !== 'profile')
+      .filter((doc) => doc.folderType !== 'profile' && doc.folderType !== 'branding')
       .map((document) => ({
         ...document,
         isNew: user.role === 'ceo'
@@ -238,21 +242,29 @@ export default function DocumentsPage() {
     return map;
   }, [documentCategories, selectedFolderDocuments]);
 
-  useEffect(() => {
-    if (user.role !== 'ceo' || !selectedEmployeeId) {
-      return;
-    }
+  // Group current user's documents by category as well
+  const myDocumentsByCategory = useMemo(() => {
+    if (canManageEmployeeDocuments) return new Map();
+    const map = new Map();
+    documentCategories.forEach((cat) => map.set(cat.code, []));
+    visibleDocuments.forEach((doc) => {
+      const found = documentCategories.find((cat) => (cat.types || []).some((t) => t.code === doc.folderType));
+      const key = found ? found.code : 'uncategorized';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(doc);
+    });
+    return map;
+  }, [canManageEmployeeDocuments, documentCategories, visibleDocuments]);
 
-    const nextSeenIds = selectedFolderDocuments
-      .filter((document) => document.isNew)
-      .map((document) => String(document.id));
-
-    if (!nextSeenIds.length) {
-      return;
-    }
-
-    setSeenDocumentIds((current) => [...new Set([...current.map(String), ...nextSeenIds])]);
-  }, [selectedEmployeeId, selectedFolderDocuments, user.role]);
+  // When leaving the Documents page, mark all visible documents as seen for CEO
+  useEffect(() => () => {
+    if (user.role !== 'ceo') return;
+    const scopedKey = getSeenDocumentIdsStorageKey(user.id);
+    const existing = JSON.parse(localStorage.getItem(scopedKey) || '[]');
+    const union = [...new Set([...existing.map(String), ...visibleDocuments.map((d) => String(d.id))])];
+    localStorage.setItem(scopedKey, JSON.stringify(union));
+    window.dispatchEvent(new Event('documents-seen-updated'));
+  }, [user.id, user.role, visibleDocuments]);
 
   useEffect(() => {
     if (!selectedEmployeeId) {
@@ -292,6 +304,10 @@ export default function DocumentsPage() {
   };
 
   const handlePreview = async (document) => {
+    // Mark this document as seen for CEO when previewing
+    if (user.role === 'ceo') {
+      setSeenDocumentIds((current) => [...new Set([...current.map(String), String(document.id)])]);
+    }
     setPreviewState((current) => {
       if (current.objectUrl) {
         URL.revokeObjectURL(current.objectUrl);
@@ -343,6 +359,9 @@ export default function DocumentsPage() {
   };
 
   const handleOpenDocument = (documentId) => {
+    if (user.role === 'ceo') {
+      setSeenDocumentIds((current) => [...new Set([...current.map(String), String(documentId)])]);
+    }
     openDocumentInNewTab(documentId);
   };
 
@@ -411,8 +430,8 @@ export default function DocumentsPage() {
               <label className="mb-2 block text-sm font-medium text-slate-700">File</label>
               <input type="file" onChange={(event) => setUploadState((current) => ({ ...current, file: event.target.files?.[0] || null }))} />
             </div>
-            <button type="submit" className="w-full rounded-2xl bg-brand-gradient px-4 py-3 text-sm font-semibold text-white shadow-lg">
-              {canManageEmployeeDocuments && selectedEmployeeId ? 'Upload document to employee' : 'Upload document'}
+            <button type="submit" disabled={isUploading} className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg ${isUploading ? 'bg-slate-400' : 'bg-brand-gradient'}`}>
+              {isUploading ? 'Uploading…' : (canManageEmployeeDocuments && selectedEmployeeId ? 'Upload document to employee' : 'Upload document')}
             </button>
           </form>
         </SectionCard>
@@ -544,7 +563,32 @@ export default function DocumentsPage() {
                     );
                   })}
                 </div>
-              ) : null}
+              ) : (
+                <div className="space-y-6">
+                  {Array.from(myDocumentsByCategory.entries()).map(([catCode, docs]) => {
+                    const cat = documentCategories.find((c) => c.code === catCode);
+                    if (!docs.length) return null;
+                    return (
+                      <div key={catCode} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h4 className="text-base font-semibold text-slate-900">{cat ? cat.label : 'Other Documents'}</h4>
+                          <span className="text-xs text-slate-500">{docs.length} item(s)</span>
+                        </div>
+                        <DataTable
+                          columns={[
+                            { key: 'type', header: 'Type', render: (row) => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); } },
+                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
+                            { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() }
+                          ]}
+                          rows={docs}
+                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: 'cursor-pointer transition hover:bg-slate-50' })}
+                          emptyLabel="No documents in this category."
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </SectionCard>

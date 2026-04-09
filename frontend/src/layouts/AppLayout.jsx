@@ -54,6 +54,7 @@ export default function AppLayout({ children }) {
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
   const location = useLocation();
   const redesignedActive = isRedesignedActive(settings);
   const redesignedTheme = redesignedActive ? getRedesignedTheme(settings) : null;
@@ -113,7 +114,10 @@ export default function AppLayout({ children }) {
           const scopedSeenIds = JSON.parse(localStorage.getItem(getSeenDocumentIdsStorageKey(user?.id)) || 'null');
           const legacySeenIds = JSON.parse(localStorage.getItem(SEEN_DOCUMENT_IDS_KEY) || '[]');
           const seenDocumentIds = new Set((Array.isArray(scopedSeenIds) ? scopedSeenIds : legacySeenIds).map(String));
-          setDocumentNotificationCount(documents.filter((document) => String(document.uploadedBy) !== String(user?.id) && !seenDocumentIds.has(String(document.id))).length);
+          setDocumentNotificationCount(
+            documents.filter((document) => document.folderType !== 'branding' && document.folderType !== 'profile')
+              .filter((document) => String(document.uploadedBy) !== String(user?.id) && !seenDocumentIds.has(String(document.id))).length
+          );
         })
         .catch(() => setDocumentNotificationCount(0));
     };
@@ -122,6 +126,14 @@ export default function AppLayout({ children }) {
     window.addEventListener('documents-seen-updated', refreshDocumentNotifications);
     return () => window.removeEventListener('documents-seen-updated', refreshDocumentNotifications);
   }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 768px)');
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     if (!user?.id) {
@@ -153,20 +165,34 @@ export default function AppLayout({ children }) {
   const backgroundUrl = useMemo(() => {
     const bgs = settings?.interface?.backgrounds || {};
     const variantKey = redesignedActive ? 'redesigned' : 'original';
-    const perPage = bgs?.[variantKey]?.perPage || {};
-    let src = perPage?.[pageKey];
-    if (src === '') {
-      return '';
+    const cfg = bgs?.[variantKey] || {};
+    const perPage = cfg?.perPage || {};
+    const pageValue = perPage?.[pageKey];
+
+    const pick = (value) => {
+      if (!value && value !== '') return '';
+      if (value === '') return '';
+      if (typeof value === 'object' && value) {
+        const chosen = isMobile ? value.mobile : value.desktop;
+        return chosen || '';
+      }
+      return value || '';
+    };
+
+    let src = pick(pageValue);
+    if (!src && src !== '') {
+      const defDesktop = cfg.defaultDesktopUrl || cfg.defaultImageUrl || (redesignedActive ? (settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '') : '');
+      const defMobile = cfg.defaultMobileUrl || cfg.defaultImageUrl || defDesktop;
+      src = isMobile ? defMobile : defDesktop;
     }
-    if (!src) {
-      src = bgs?.[variantKey]?.defaultImageUrl || (redesignedActive ? (settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl || '') : '');
-    }
+
+    if (src === '') return '';
     const match = String(src || '').match(/^document:(\d+)$/i);
     if (match) {
       return getDocumentUrl(match[1], true);
     }
     return src || '';
-  }, [settings?.interface?.backgrounds, settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl, redesignedActive, pageKey]);
+  }, [settings?.interface?.backgrounds, settings?.interface?.uiVariant?.redesignedTheme?.backgroundImageUrl, redesignedActive, pageKey, isMobile]);
 
   const backgroundImageOpacity = useMemo(() => {
     const value = Number(settings?.interface?.backgrounds?.imageOpacity ?? 1);
@@ -175,12 +201,36 @@ export default function AppLayout({ children }) {
   }, [settings?.interface?.backgrounds?.imageOpacity]);
 
   const navigationActiveColor = settings?.interface?.navigationActiveColor || '#fef08a';
-  const nonCardTextColor = settings?.interface?.nonCardTextColor || undefined;
+
+  // Navigation (menu) blur settings per device
+  const navBlurDesktopEnabled = Boolean(settings?.interface?.navigationBlur?.desktop?.enabled);
+  const navBlurDesktopPx = Math.max(0, Math.min(40, Number(settings?.interface?.navigationBlur?.desktop?.blurPx ?? 0)));
+  const navBlurMobileEnabled = Boolean(settings?.interface?.navigationBlur?.mobile?.enabled);
+  const navBlurMobilePx = Math.max(0, Math.min(40, Number(settings?.interface?.navigationBlur?.mobile?.blurPx ?? 0)));
+  const menuBlurEnabled = isMobile ? navBlurMobileEnabled : navBlurDesktopEnabled;
+  const menuBlurPx = isMobile ? navBlurMobilePx : navBlurDesktopPx;
+
+  // Compute sidebar (menu) background style: green-tinted, semi-transparent when blur is on
+  const gradientFrom = redesignedActive ? (redesignedTheme?.sidebarGradientFrom || '#14532d') : (settings?.branding?.gradientFrom || '#14532d');
+  const gradientTo = redesignedActive ? (redesignedTheme?.sidebarGradientTo || '#22c55e') : (settings?.branding?.gradientTo || '#22c55e');
+  const sidebarBackgroundImage = `linear-gradient(135deg, ${withOpacity(gradientFrom, menuBlurEnabled ? 0.78 : 1)}, ${withOpacity(gradientTo, menuBlurEnabled ? 0.78 : 1)})`;
+  const sidebarBackdrop = menuBlurEnabled && menuBlurPx > 0 ? { backdropFilter: `saturate(160%) blur(${menuBlurPx}px)`, WebkitBackdropFilter: `saturate(160%) blur(${menuBlurPx}px)` } : {};
+
+  // Reverted: mobile header remains sticky without scroll-based show/hide
 
   const closeMobile = () => setMobileOpen(false);
 
   return (
-    <div className="relative min-h-screen text-text-primary" style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, backgroundAttachment: backgroundUrl ? 'fixed' : undefined, backgroundSize: backgroundUrl ? 'contain' : undefined, backgroundPosition: backgroundUrl ? 'top center' : undefined, backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined, backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined, color: nonCardTextColor }}>
+    <div className="relative min-h-screen text-text-primary app-non-card-text" style={{
+      backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined,
+      backgroundAttachment: backgroundUrl ? 'fixed' : undefined,
+      backgroundSize: backgroundUrl ? 'cover' : undefined,
+      backgroundPosition: backgroundUrl ? 'center center' : undefined,
+      backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined,
+      backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined,
+      '--card-text-color': redesignedTheme?.cardTextColor || '#0f172a'
+    }}>
+      
       {backgroundUrl ? (
         <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity('#ffffff', 1 - backgroundImageOpacity) }} />
       ) : null}
@@ -189,8 +239,8 @@ export default function AppLayout({ children }) {
       ) : null}
       <div className="relative flex min-h-screen overflow-x-hidden">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${redesignedActive ? '' : 'bg-brand-gradient'}`}
-          style={redesignedActive ? { backgroundImage: `linear-gradient(135deg, ${redesignedTheme?.sidebarGradientFrom || '#14532d'}, ${redesignedTheme?.sidebarGradientTo || '#22c55e'})` } : undefined}
+          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          style={{ backgroundImage: sidebarBackgroundImage, ...sidebarBackdrop }}
         >
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>

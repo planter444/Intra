@@ -20,11 +20,11 @@ const accentClasses = [
   'from-cyan-500/15 to-cyan-100'
 ];
 
-function LeaveBalanceCard({ balance, index, myRequests }) {
+function LeaveBalanceCard({ balance, index, myRequests, opacity = 1 }) {
   const { animationStyle } = usePagePresentation({ animationOrder: index + 1 });
 
   return (
-    <div key={balance.id} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={animationStyle}>
+    <div key={balance.id} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={{ ...animationStyle, opacity }}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-700">{balance.label}</p>
@@ -47,6 +47,7 @@ export default function LeavesPage() {
   const isCeo = user?.role === 'ceo';
   const canApplyForLeave = !isCeo;
   const showPersonalHistory = !isCeo;
+  const leaveCardsOpacity = Number(settings?.interface?.pageExperience?.leave?.leaveCardsOpacity ?? 1) || 1;
 
   useEffect(() => {
     Promise.all([fetchLeaveBalances(), fetchLeaveRequests()])
@@ -105,7 +106,7 @@ export default function LeavesPage() {
       {isCeo ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {(settings?.leaveTypes || []).map((lt, index) => (
-            <div key={lt.code || lt.label || index} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`}>
+            <div key={lt.code || lt.label || index} className={`rounded-3xl bg-gradient-to-br ${accentClasses[index % accentClasses.length]} p-5 shadow-soft`} style={{ opacity: leaveCardsOpacity }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-700">{lt.label}</p>
@@ -121,7 +122,7 @@ export default function LeavesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} />)}
+          {balances.map((balance, index) => <LeaveBalanceCard key={balance.id} balance={balance} index={index} myRequests={myRequests} opacity={leaveCardsOpacity} />)}
         </div>
       )}
 

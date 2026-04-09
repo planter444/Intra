@@ -29,6 +29,45 @@ const mapTimelineEvents = (request, auditTrail) => {
   };
 };
 
+const deleteRequestPermanently = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const request = await leaveModel.findRequestById(id);
+    if (!request) {
+      return res.status(404).json({ message: 'Leave request not found.' });
+    }
+
+    if (!['admin', 'ceo'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'Only Admin or CEO can delete leave requests.' });
+    }
+
+    if (request.supportingDocumentPath) {
+      await deleteStoredDocument({
+        storagePath: request.supportingDocumentPath,
+        storedName: request.supportingDocumentStoredName,
+        mimeType: request.supportingDocumentMimeType
+      });
+    }
+
+    await leaveModel.deleteRequest(id);
+
+    await logAction({
+      actorUserId: req.user.id,
+      actorRole: req.user.role,
+      action: 'LEAVE_DELETE',
+      entityType: 'leave_request',
+      entityId: String(id),
+      description: `${req.user.fullName} permanently deleted leave request ${id}.`,
+      metadata: {},
+      ipAddress: req.ip
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const sendRemoteDocument = async ({ res, url, mimeType, fileName }) => {
   const response = await fetch(url);
   if (!response.ok) {
@@ -578,5 +617,6 @@ module.exports = {
   updateRequest,
   cancelRequest,
   downloadSupportingDocument,
-  decideRequest
+  decideRequest,
+  deleteRequestPermanently
 };

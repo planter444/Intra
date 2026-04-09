@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { restoreSettings, updateSettings } from '../services/settingsService';
 import { uploadDocument } from '../services/documentService';
+import { fetchLeaveRequests, deleteLeaveRequest } from '../services/leaveService';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
@@ -48,7 +49,8 @@ export default function SettingsPage() {
     ? [
         ['employees', 'Employees Page'],
         ['documents', 'Documents Page'],
-        ['leave', 'Leave Page']
+        ['leave', 'Leave Page'],
+        ['leaves_cleanup', 'Delete Leave Requests']
       ]
     : [
         ['branding', 'Branding'],
@@ -75,8 +77,13 @@ export default function SettingsPage() {
   const bgUploadInputRef = useRef(null);
   const bgOriginalDefaultRef = useRef(null);
   const bgRedesignedDefaultRef = useRef(null);
+  const bgOriginalDefaultMobileRef = useRef(null);
+  const bgRedesignedDefaultMobileRef = useRef(null);
   const bgPerPageUploadRef = useRef(null);
-  const [bgPendingTarget, setBgPendingTarget] = useState({ variant: 'original', pageKey: '' });
+  const [bgPendingTarget, setBgPendingTarget] = useState({ variant: 'original', pageKey: '', device: 'desktop' });
+  const docCategoryRefs = useRef([]);
+  const [cleanupLeaves, setCleanupLeaves] = useState([]);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -89,6 +96,15 @@ export default function SettingsPage() {
       setActivePage('employees');
     }
   }, [isCeoOnly]);
+
+  useEffect(() => {
+    if (!isCeoOnly || activePage !== 'leaves_cleanup') return;
+    setCleanupLoading(true);
+    fetchLeaveRequests()
+      .then(setCleanupLeaves)
+      .catch(() => setCleanupLeaves([]))
+      .finally(() => setCleanupLoading(false));
+  }, [activePage, isCeoOnly]);
 
   useEffect(() => {
     if (!leaveTypeEditor.open) {
@@ -120,7 +136,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleUploadPerPageBackground = async (variant, pageKey, file) => {
+  const handleUploadPerPageBackground = async (variant, pageKey, file, device = 'desktop') => {
     if (!file) return;
     try {
       const allowed = ['image/jpeg', 'image/png', 'image/webp'];
@@ -129,7 +145,13 @@ export default function SettingsPage() {
         return;
       }
       const doc = await uploadDocument({ file, folderType: 'branding' });
-      setBackgroundValue(variant, pageKey, `document:${doc.id}`);
+      setBackgroundValue(variant, pageKey, (current) => {
+        const next = (typeof current === 'object' && current)
+          ? { ...current }
+          : { desktop: String(current || ''), mobile: String(current || '') };
+        next[device] = `document:${doc.id}`;
+        return next;
+      });
       setMessage('Background image uploaded. Click Save settings to apply.');
     } catch (error) {
       setMessage(error.response?.data?.message || 'Unable to upload background image.');
@@ -281,17 +303,21 @@ export default function SettingsPage() {
     }));
   };
 
-  const setBackgroundValue = (variant, pageKey, value) => {
-    setBackgrounds((bg) => ({
-      ...bg,
-      [variant]: {
-        ...(bg?.[variant] || {}),
-        perPage: { ...(bg?.[variant]?.perPage || {}), [pageKey]: value }
-      }
-    }));
+  const setBackgroundValue = (variant, pageKey, valueOrUpdater) => {
+    setBackgrounds((bg) => {
+      const prev = (bg?.[variant]?.perPage || {})[pageKey];
+      const nextValue = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
+      return {
+        ...bg,
+        [variant]: {
+          ...(bg?.[variant] || {}),
+          perPage: { ...(bg?.[variant]?.perPage || {}), [pageKey]: nextValue }
+        }
+      };
+    });
   };
 
-  const handleUploadDefaultBackground = async (variant, file) => {
+  const handleUploadDefaultBackground = async (variant, file, device = 'desktop') => {
     if (!file) return;
     try {
       const allowed = ['image/jpeg', 'image/png', 'image/webp'];
@@ -302,7 +328,7 @@ export default function SettingsPage() {
       const doc = await uploadDocument({ file, folderType: 'branding' });
       setBackgrounds((bg) => ({
         ...bg,
-        [variant]: { ...(bg?.[variant] || {}), defaultImageUrl: `document:${doc.id}` }
+        [variant]: { ...(bg?.[variant] || {}), [`default${device === 'mobile' ? 'Mobile' : 'Desktop'}Url`]: `document:${doc.id}` }
       }));
       setMessage('Background image uploaded. Click Save settings to apply.');
     } catch (error) {
@@ -311,10 +337,19 @@ export default function SettingsPage() {
   };
 
   const addDocumentCategory = () => {
+    const nextIndex = (draft.documentCategories || []).length;
     setDraft((current) => ({
       ...current,
       documentCategories: [...(current.documentCategories || []), { code: '', label: '', types: [] }]
     }));
+    window.setTimeout(() => {
+      const wrapper = docCategoryRefs.current[nextIndex];
+      if (wrapper) {
+        wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const firstInput = wrapper.querySelector('input');
+        firstInput?.focus();
+      }
+    }, 150);
   };
 
   const removeDocumentCategory = (index) => {
@@ -517,7 +552,7 @@ export default function SettingsPage() {
       return acc;
     }, []);
     const normalizedPageExperience = Object.entries(draft.interface?.pageExperience || {}).reduce((accumulator, [pageKey, config]) => {
-      accumulator[pageKey] = {
+      const base = {
         enabled: config?.enabled !== false,
         type: PAGE_PRESENTATION_OPTIONS.some(([value]) => value === config?.type) ? config.type : 'fade-up',
         delayMs: Math.max(0, Number(config?.delayMs || 0)),
@@ -525,6 +560,10 @@ export default function SettingsPage() {
         cardBackgroundColor: String(config?.cardBackgroundColor || '#ffffff').trim() || '#ffffff',
         cardBackgroundOpacity: Math.min(1, Math.max(0, Number(config?.cardBackgroundOpacity ?? 1)))
       };
+      if (pageKey === 'leave') {
+        base.leaveCardsOpacity = Math.min(1, Math.max(0, Number(config?.leaveCardsOpacity ?? 1)));
+      }
+      accumulator[pageKey] = base;
       return accumulator;
     }, {});
     const normalizedInterface = {
@@ -535,17 +574,40 @@ export default function SettingsPage() {
       pageExperience: normalizedPageExperience,
       backgrounds: {
         original: {
-          defaultImageUrl: String(draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
-          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => [k, String((draft.interface?.backgrounds?.original?.perPage || {})[k] ?? '').trim()]))
+          defaultDesktopUrl: String(draft.interface?.backgrounds?.original?.defaultDesktopUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
+          defaultMobileUrl: String(draft.interface?.backgrounds?.original?.defaultMobileUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''),
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+            const raw = (draft.interface?.backgrounds?.original?.perPage || {})[k];
+            const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(raw || '').trim() };
+            return [k, { desktop: String(asObj.desktop || '').trim(), mobile: String(asObj.mobile || '').trim() }];
+          }))
         },
         redesigned: {
-          defaultImageUrl: String(draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
-          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => [k, String((draft.interface?.backgrounds?.redesigned?.perPage || {})[k] ?? '').trim()]))
+          defaultDesktopUrl: String(draft.interface?.backgrounds?.redesigned?.defaultDesktopUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
+          defaultMobileUrl: String(draft.interface?.backgrounds?.redesigned?.defaultMobileUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
+          perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+            const raw = (draft.interface?.backgrounds?.redesigned?.perPage || {})[k];
+            const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(raw || '').trim() };
+            return [k, { desktop: String(asObj.desktop || '').trim(), mobile: String(asObj.mobile || '').trim() }];
+          }))
         },
         imageOpacity: Math.min(1, Math.max(0, Number(draft.interface?.backgrounds?.imageOpacity ?? 1)))
       },
       navigationActiveColor: String(draft.interface?.navigationActiveColor || '#fef08a').trim() || '#fef08a',
-      nonCardTextColor: String(draft.interface?.nonCardTextColor || '').trim(),
+      pageHeaderColors: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit'].map((k) => {
+        const v = (draft.interface?.pageHeaderColors || {})[k] || {};
+        return [k, { title: String(v.title || '').trim(), subtitle: String(v.subtitle || '').trim() }];
+      })),
+      navigationBlur: {
+        mobile: {
+          enabled: Boolean(draft.interface?.navigationBlur?.mobile?.enabled),
+          blurPx: Math.max(0, Math.min(40, Number(draft.interface?.navigationBlur?.mobile?.blurPx ?? 0)))
+        },
+        desktop: {
+          enabled: Boolean(draft.interface?.navigationBlur?.desktop?.enabled),
+          blurPx: Math.max(0, Math.min(40, Number(draft.interface?.navigationBlur?.desktop?.blurPx ?? 0)))
+        }
+      },
       uiVariant: {
         active: ['original', 'redesigned'].includes(draft.interface?.uiVariant?.active) ? draft.interface.uiVariant.active : 'original',
         applyTo: ['all', 'small_only', 'large_only'].includes(draft.interface?.uiVariant?.applyTo) ? draft.interface.uiVariant.applyTo : 'all',
@@ -590,6 +652,7 @@ export default function SettingsPage() {
     replaceSettings(nextSettings);
     setDraft(clone(nextSettings));
     setMessage('System settings updated successfully.');
+    try { window.alert('Settings saved successfully.'); } catch (_) {}
   };
 
   const handleRestore = async () => {
@@ -698,6 +761,15 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
+          <SectionCard title="Leave page options" subtitle="Adjust the opacity of the leave cards that show leave days and remaining days.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Leave cards opacity</label>
+                <input type="number" min="0" max="1" step="0.05" value={draft.interface?.pageExperience?.leave?.leaveCardsOpacity ?? 1} onChange={(e) => setPageExperienceField('leave', 'leaveCardsOpacity', e.target.value)} />
+              </div>
+            </div>
+          </SectionCard>
+
           <SectionCard title="Redesigned UI - Theme" subtitle="Customize the background, overlay, sidebar gradient, and glass card look. These settings do not affect the original UI.">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
@@ -732,6 +804,49 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
+      {isCeoOnly && activePage === 'leaves_cleanup' ? (
+        <div className="space-y-6">
+          <SectionCard title="Delete Leave Requests" subtitle="As CEO, you can permanently delete any employee's leave request. This action cannot be undone.">
+            {cleanupLoading ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Loading leave requests…</div>
+            ) : cleanupLeaves.length ? (
+              <div className="space-y-3">
+                {cleanupLeaves.map((req) => (
+                  <div key={req.id} className="grid items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1.3fr),minmax(0,1fr),minmax(0,0.8fr),120px]">
+                    <div>
+                      <p className="font-medium text-slate-900">{req.employeeName}</p>
+                      <p className="text-xs text-slate-500">{req.employeeEmail}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-900">{req.leaveTypeLabel}</p>
+                      <p className="text-xs text-slate-500">{req.startDate} – {req.endDate} · {req.daysRequested} day(s)</p>
+                    </div>
+                    <div>
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${req.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : req.status.startsWith('pending') ? 'bg-amber-100 text-amber-700' : req.status === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{req.status}</span>
+                    </div>
+                    <div className="flex justify-end">
+                      <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700" onClick={async () => {
+                        if (!window.confirm('Delete this leave request permanently?')) return;
+                        try {
+                          await deleteLeaveRequest(req.id);
+                          setCleanupLeaves((current) => current.filter((item) => item.id !== req.id));
+                        } catch (error) {
+                          window.alert(error.response?.data?.message || 'Unable to delete leave request.');
+                        }
+                      }}>
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No leave requests found.</div>
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
+
       {!isCeoOnly && activePage === 'backgrounds' ? (
         <div className="space-y-6">
           <SectionCard title="Global background options" subtitle="Control general behavior that applies to both Original and Redesigned UIs.">
@@ -741,50 +856,143 @@ export default function SettingsPage() {
                 <input type="number" min="0" max="1" step="0.05" value={draft.interface?.backgrounds?.imageOpacity ?? 1} onChange={(e) => setBackgrounds((bg) => ({ ...bg, imageOpacity: e.target.value }))} />
               </div>
               <SettingsInput label="Active menu color" value={draft.interface?.navigationActiveColor || '#fef08a'} onChange={(v) => setInterfaceField('navigationActiveColor', v)} colorPicker />
-              <SettingsInput label="Non-card text color" value={draft.interface?.nonCardTextColor || ''} onChange={(v) => setInterfaceField('nonCardTextColor', v)} colorPicker />
             </div>
           </SectionCard>
 
-          <SectionCard title="Default background images" subtitle="Set separate defaults for the Original UI and the Redesigned UI.">
+          <SectionCard title="Page header colors per page" subtitle="Set distinct title and subtitle colors for each page header.">
+            <div className="grid gap-4 md:grid-cols-2">
+              {['dashboard','employees','profile','documents','leave','settings','audit'].map((page) => (
+                <div key={page} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-900">{page[0].toUpperCase()+page.slice(1)}</h4>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <SettingsInput label="Title color" value={draft.interface?.pageHeaderColors?.[page]?.title || ''} onChange={(v) => setDraft((cur) => ({
+                      ...cur,
+                      interface: {
+                        ...cur.interface,
+                        pageHeaderColors: { ...(cur.interface?.pageHeaderColors || {}), [page]: { ...(cur.interface?.pageHeaderColors?.[page] || {}), title: v } }
+                      }
+                    }))} colorPicker />
+                    <SettingsInput label="Subtitle color" value={draft.interface?.pageHeaderColors?.[page]?.subtitle || ''} onChange={(v) => setDraft((cur) => ({
+                      ...cur,
+                      interface: {
+                        ...cur.interface,
+                        pageHeaderColors: { ...(cur.interface?.pageHeaderColors || {}), [page]: { ...(cur.interface?.pageHeaderColors?.[page] || {}), subtitle: v } }
+                      }
+                    }))} colorPicker />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Navigation menu blur" subtitle="Control the glass-like blur of the navigation menu background on phones and desktops.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
+                  <input type="checkbox" className="mt-1" checked={Boolean(draft.interface?.navigationBlur?.mobile?.enabled)} onChange={(e) => setDraft((cur) => ({
+                    ...cur,
+                    interface: { ...cur.interface, navigationBlur: { ...(cur.interface?.navigationBlur || {}), mobile: { ...(cur.interface?.navigationBlur?.mobile || {}), enabled: e.target.checked } } }
+                  }))} />
+                  <span>
+                    <span className="block font-semibold text-slate-900">Enable menu blur on phones</span>
+                    <span className="mt-1 block text-xs text-slate-500">Adds a green-tinted glass blur to the mobile menu background.</span>
+                  </span>
+                </label>
+                <div className="mt-3">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Blur amount (px)</label>
+                  <input type="number" min="0" max="40" value={Number(draft.interface?.navigationBlur?.mobile?.blurPx ?? 0)} onChange={(e) => setDraft((cur) => ({
+                    ...cur,
+                    interface: { ...cur.interface, navigationBlur: { ...(cur.interface?.navigationBlur || {}), mobile: { ...(cur.interface?.navigationBlur?.mobile || {}), blurPx: e.target.value } } }
+                  }))} />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
+                  <input type="checkbox" className="mt-1" checked={Boolean(draft.interface?.navigationBlur?.desktop?.enabled)} onChange={(e) => setDraft((cur) => ({
+                    ...cur,
+                    interface: { ...cur.interface, navigationBlur: { ...(cur.interface?.navigationBlur || {}), desktop: { ...(cur.interface?.navigationBlur?.desktop || {}), enabled: e.target.checked } } }
+                  }))} />
+                  <span>
+                    <span className="block font-semibold text-slate-900">Enable menu blur on desktops</span>
+                    <span className="mt-1 block text-xs text-slate-500">Adds a green-tinted glass blur to the desktop sidebar background.</span>
+                  </span>
+                </label>
+                <div className="mt-3">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Blur amount (px)</label>
+                  <input type="number" min="0" max="40" value={Number(draft.interface?.navigationBlur?.desktop?.blurPx ?? 0)} onChange={(e) => setDraft((cur) => ({
+                    ...cur,
+                    interface: { ...cur.interface, navigationBlur: { ...(cur.interface?.navigationBlur || {}), desktop: { ...(cur.interface?.navigationBlur?.desktop || {}), blurPx: e.target.value } } }
+                  }))} />
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Default background images" subtitle="Set separate defaults for the Original and Redesigned UIs. Provide both Desktop and Mobile backgrounds.">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-1">
-                <label className="mb-2 block text-sm font-medium text-slate-700">Original UI default</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Original UI default - Desktop</label>
                 <div className="flex items-center gap-3">
-                  <input value={draft.interface?.backgrounds?.original?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, original: { ...(bg?.original || {}), defaultImageUrl: e.target.value } }))} />
-                  <input ref={bgOriginalDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('original', f); e.target.value=''; }} />
+                  <input value={draft.interface?.backgrounds?.original?.defaultDesktopUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, original: { ...(bg?.original || {}), defaultDesktopUrl: e.target.value } }))} />
+                  <input ref={bgOriginalDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('original', f, 'desktop'); e.target.value=''; }} />
                   <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgOriginalDefaultRef.current?.click()}>Upload</button>
+                </div>
+                <label className="mt-3 mb-2 block text-sm font-medium text-slate-700">Original UI default - Mobile</label>
+                <div className="flex items-center gap-3">
+                  <input value={draft.interface?.backgrounds?.original?.defaultMobileUrl || draft.interface?.backgrounds?.original?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, original: { ...(bg?.original || {}), defaultMobileUrl: e.target.value } }))} />
+                  <input ref={bgOriginalDefaultMobileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('original', f, 'mobile'); e.target.value=''; }} />
+                  <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgOriginalDefaultMobileRef.current?.click()}>Upload</button>
                 </div>
               </div>
               <div className="md:col-span-1">
-                <label className="mb-2 block text-sm font-medium text-slate-700">Redesigned UI default</label>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Redesigned UI default - Desktop</label>
                 <div className="flex items-center gap-3">
-                  <input value={draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, redesigned: { ...(bg?.redesigned || {}), defaultImageUrl: e.target.value } }))} />
-                  <input ref={bgRedesignedDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('redesigned', f); e.target.value=''; }} />
+                  <input value={draft.interface?.backgrounds?.redesigned?.defaultDesktopUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, redesigned: { ...(bg?.redesigned || {}), defaultDesktopUrl: e.target.value } }))} />
+                  <input ref={bgRedesignedDefaultRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('redesigned', f, 'desktop'); e.target.value=''; }} />
                   <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgRedesignedDefaultRef.current?.click()}>Upload</button>
+                </div>
+                <label className="mt-3 mb-2 block text-sm font-medium text-slate-700">Redesigned UI default - Mobile</label>
+                <div className="flex items-center gap-3">
+                  <input value={draft.interface?.backgrounds?.redesigned?.defaultMobileUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''} onChange={(e) => setBackgrounds((bg) => ({ ...bg, redesigned: { ...(bg?.redesigned || {}), defaultMobileUrl: e.target.value } }))} />
+                  <input ref={bgRedesignedDefaultMobileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadDefaultBackground('redesigned', f, 'mobile'); e.target.value=''; }} />
+                  <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => bgRedesignedDefaultMobileRef.current?.click()}>Upload</button>
                 </div>
               </div>
             </div>
           </SectionCard>
 
-          <SectionCard title="Per-page overrides" subtitle="Optionally set a different background image per page. Leave blank to use the default. Set to an empty value to remove the background on that page.">
+          <SectionCard title="Per-page overrides" subtitle="Optionally set different Desktop and Mobile backgrounds per page for each UI.">
             <div className="space-y-4">
-              <input ref={bgPerPageUploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPerPageBackground(bgPendingTarget.variant, bgPendingTarget.pageKey, f); e.target.value=''; }} />
+              <input ref={bgPerPageUploadRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadPerPageBackground(bgPendingTarget.variant, bgPendingTarget.pageKey, f, bgPendingTarget.device); e.target.value=''; }} />
               {['dashboard','employees','profile','documents','leave','settings','audit'].map((page) => (
                 <div key={page} className="grid gap-3 md:grid-cols-[minmax(0,1fr),minmax(0,1fr)]">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Original UI</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Original UI (Desktop)</label>
                     <div className="flex items-center gap-2">
-                      <input className="flex-1" value={draft.interface?.backgrounds?.original?.perPage?.[page] ?? ''} onChange={(e) => setBackgroundValue('original', page, e.target.value)} />
-                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'original', pageKey: page }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
-                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('original', page, '')}>Clear</button>
+                      <input className="flex-1" value={(draft.interface?.backgrounds?.original?.perPage?.[page]?.desktop) ?? (typeof draft.interface?.backgrounds?.original?.perPage?.[page] === 'string' ? draft.interface?.backgrounds?.original?.perPage?.[page] : '')} onChange={(e) => setBackgroundValue('original', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), desktop: e.target.value }))} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'original', pageKey: page, device: 'desktop' }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('original', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), desktop: '' }))}>Clear</button>
+                    </div>
+                    <label className="mt-2 mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Original UI (Mobile)</label>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1" value={(draft.interface?.backgrounds?.original?.perPage?.[page]?.mobile) ?? (typeof draft.interface?.backgrounds?.original?.perPage?.[page] === 'string' ? draft.interface?.backgrounds?.original?.perPage?.[page] : '')} onChange={(e) => setBackgroundValue('original', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '' ) }), mobile: e.target.value }))} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'original', pageKey: page, device: 'mobile' }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('original', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), mobile: '' }))}>Clear</button>
                     </div>
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Redesigned UI</label>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Redesigned UI (Desktop)</label>
                     <div className="flex items-center gap-2">
-                      <input className="flex-1" value={draft.interface?.backgrounds?.redesigned?.perPage?.[page] ?? ''} onChange={(e) => setBackgroundValue('redesigned', page, e.target.value)} />
-                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'redesigned', pageKey: page }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
-                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('redesigned', page, '')}>Clear</button>
+                      <input className="flex-1" value={(draft.interface?.backgrounds?.redesigned?.perPage?.[page]?.desktop) ?? (typeof draft.interface?.backgrounds?.redesigned?.perPage?.[page] === 'string' ? draft.interface?.backgrounds?.redesigned?.perPage?.[page] : '')} onChange={(e) => setBackgroundValue('redesigned', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), desktop: e.target.value }))} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'redesigned', pageKey: page, device: 'desktop' }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('redesigned', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), desktop: '' }))}>Clear</button>
+                    </div>
+                    <label className="mt-2 mb-2 block text-sm font-medium text-slate-700">{page[0].toUpperCase()+page.slice(1)} - Redesigned UI (Mobile)</label>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1" value={(draft.interface?.backgrounds?.redesigned?.perPage?.[page]?.mobile) ?? (typeof draft.interface?.backgrounds?.redesigned?.perPage?.[page] === 'string' ? draft.interface?.backgrounds?.redesigned?.perPage?.[page] : '')} onChange={(e) => setBackgroundValue('redesigned', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), mobile: e.target.value }))} />
+                      <button type="button" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700" onClick={() => { setBgPendingTarget({ variant: 'redesigned', pageKey: page, device: 'mobile' }); bgPerPageUploadRef.current?.click(); }}>Upload</button>
+                      <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" onClick={() => setBackgroundValue('redesigned', page, (prev) => ({ ...(typeof prev === 'object' && prev ? prev : { desktop: String(prev || ''), mobile: String(prev || '') }), mobile: '' }))}>Clear</button>
                     </div>
                   </div>
                 </div>
@@ -1059,7 +1267,8 @@ export default function SettingsPage() {
                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700"
               >
                 Add Department
-              </button>
+              </button>,
+              <button key="save-emp" type="button" onClick={handleSave} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg">Save changes</button>
             ]}
           >
             <div className="space-y-4">
@@ -1167,7 +1376,7 @@ export default function SettingsPage() {
           ]}>
             <div className="space-y-4">
               {documentCategories.map((cat, cIndex) => (
-                <div key={`${cat.code}-${cIndex}`} className="rounded-2xl border border-slate-200 p-4">
+                <div key={`${cat.code}-${cIndex}`} ref={(el) => { docCategoryRefs.current[cIndex] = el; }} className="rounded-2xl border border-slate-200 p-4">
                   <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),120px]">
                     <div>
                       <label className="mb-2 block text-sm font-medium text-slate-700">Folder type name</label>
@@ -1216,7 +1425,8 @@ export default function SettingsPage() {
                 className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-semibold text-white shadow-lg"
               >
                 <Plus size={16} />Add Leave Type
-              </button>
+              </button>,
+              <button key="save-leave" type="button" onClick={handleSave} className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg">Save changes</button>
             ]}
           >
             <div ref={leaveSectionRef} className="space-y-3">
@@ -1261,6 +1471,15 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Leave page options" subtitle="Adjust the opacity of the leave cards that show leave days and remaining days.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Leave cards opacity</label>
+                <input type="number" min="0" max="1" step="0.05" value={draft.interface?.pageExperience?.leave?.leaveCardsOpacity ?? 1} onChange={(e) => setPageExperienceField('leave', 'leaveCardsOpacity', e.target.value)} />
+              </div>
             </div>
           </SectionCard>
 

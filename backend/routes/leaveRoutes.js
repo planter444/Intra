@@ -8,7 +8,8 @@ const {
   updateRequest,
   cancelRequest,
   downloadSupportingDocument,
-  decideRequest
+  decideRequest,
+  deleteRequestPermanently
 } = require('../controllers/leaveController');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -26,5 +27,6 @@ router.post('/requests', authorize('employee', 'supervisor', 'admin'), upload.si
 router.put('/requests/:id', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), updateRequest);
 router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin'), cancelRequest);
 router.patch('/requests/:id/decision', authorize('employee', 'supervisor', 'admin', 'ceo'), decideRequest);
+router.delete('/requests/:id', authorize('admin', 'ceo'), deleteRequestPermanently);
 
 module.exports = router;

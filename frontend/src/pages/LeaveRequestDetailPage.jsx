@@ -147,6 +147,7 @@ export default function LeaveRequestDetailPage() {
     return availableBalance - requestedDays;
   }, [request?.id, requestedDays, requests, selectedBalance]);
 
+  const isRequestOwner = request && String(request.userId) === String(user?.id);
   const canEditOrCancel = useMemo(() => {
     if (!request || String(request.userId) !== String(user?.id)) {
       return false;
@@ -159,10 +160,10 @@ export default function LeaveRequestDetailPage() {
     return request.status === 'pending_hr' && !request.supervisorApproverId && !request.hrApproverId && !request.ceoApproverId;
   }, [request, user?.id]);
 
-  const canSupervisorReview = request && String(request.employeeSupervisorId) === String(user?.id) && request.status === 'pending_supervisor';
-  const canOperationalReview = request && (user?.role === 'admin' || user?.role === 'ceo') && request.status === 'pending_hr';
-  const canFinalCeoReview = request && user?.role === 'ceo' && request.status === 'pending_ceo';
-  const canReviseCeoDecision = request && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
+  const canSupervisorReview = request && !isRequestOwner && String(request.employeeSupervisorId) === String(user?.id) && request.status === 'pending_supervisor';
+  const canOperationalReview = request && !isRequestOwner && (user?.role === 'admin' || user?.role === 'ceo') && request.status === 'pending_hr';
+  const canFinalCeoReview = request && !isRequestOwner && user?.role === 'ceo' && request.status === 'pending_ceo';
+  const canReviseCeoDecision = request && !isRequestOwner && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
   const timeline = request?.timeline || {
     submitted: { label: 'Submitted', time: request?.createdAt, actorName: request?.employeeName },
     supervisor: request?.supervisorApproverId ? { label: 'Supervisor Review', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,

@@ -75,3 +75,9 @@ export const decideLeaveRequest = async (id, payload) => {
   notifyLeaveUpdates();
   return data.request;
 };
+
+export const deleteLeaveRequest = async (id) => {
+  const { data } = await api.delete(`/leaves/requests/${id}`);
+  notifyLeaveUpdates();
+  return data?.success === true;
+};

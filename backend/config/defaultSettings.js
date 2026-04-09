@@ -114,8 +114,23 @@ module.exports = {
     },
     // Active navigation item color (e.g., a warm yellow)
     navigationActiveColor: '#fef08a',
-    // Non-card text color to improve readability when background images are present
+    // Legacy non-card text color (no longer applied globally)
     nonCardTextColor: '' ,
+    // Per-page page header colors
+    pageHeaderColors: {
+      dashboard: { title: '', subtitle: '' },
+      employees: { title: '', subtitle: '' },
+      profile: { title: '', subtitle: '' },
+      documents: { title: '', subtitle: '' },
+      leave: { title: '', subtitle: '' },
+      settings: { title: '', subtitle: '' },
+      audit: { title: '', subtitle: '' }
+    },
+    // Menu background blur configuration
+    navigationBlur: {
+      mobile: { enabled: false, blurPx: 0 },
+      desktop: { enabled: false, blurPx: 0 }
+    },
     uiVariant: {
       active: 'original',
       applyTo: 'all',
