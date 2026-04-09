@@ -210,6 +210,13 @@ export default function AppLayout({ children }) {
   const menuBlurEnabled = isMobile ? navBlurMobileEnabled : navBlurDesktopEnabled;
   const menuBlurPx = isMobile ? navBlurMobilePx : navBlurDesktopPx;
 
+  // Mobile menu animation settings
+  const menuAnimEnabled = settings?.interface?.mobileMenuAnimationEnabled !== false;
+  const menuAnimType = ['slide', 'fade', 'scale'].includes(settings?.interface?.mobileMenuAnimationType) ? settings.interface.mobileMenuAnimationType : 'slide';
+  const menuAnimDuration = Math.max(120, Number(settings?.interface?.mobileMenuAnimationDurationMs || 260));
+  const mobileOpenClasses = menuAnimType === 'fade' ? 'translate-x-0 opacity-100' : (menuAnimType === 'scale' ? 'translate-x-0 scale-100 opacity-100' : 'translate-x-0');
+  const mobileClosedClasses = menuAnimType === 'fade' ? 'opacity-0 pointer-events-none' : (menuAnimType === 'scale' ? 'opacity-0 pointer-events-none scale-95' : '-translate-x-full');
+
   // Compute sidebar (menu) background style: green-tinted, semi-transparent when blur is on
   const gradientFrom = redesignedActive ? (redesignedTheme?.sidebarGradientFrom || '#14532d') : (settings?.branding?.gradientFrom || '#14532d');
   const gradientTo = redesignedActive ? (redesignedTheme?.sidebarGradientTo || '#22c55e') : (settings?.branding?.gradientTo || '#22c55e');
@@ -218,18 +225,31 @@ export default function AppLayout({ children }) {
 
   // Reverted: mobile header remains sticky without scroll-based show/hide
 
+  // Prevent page scrolling when mobile menu is open to avoid white reveal/jank
+  useEffect(() => {
+    if (isMobile && mobileOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prev; };
+    }
+    return undefined;
+  }, [isMobile, mobileOpen]);
+
   const closeMobile = () => setMobileOpen(false);
 
   return (
     <div className="relative min-h-screen text-text-primary app-non-card-text" style={{
-      backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined,
-      backgroundAttachment: backgroundUrl ? 'fixed' : undefined,
+      backgroundImage: !isMobile && backgroundUrl ? `url(${backgroundUrl})` : undefined,
+      backgroundAttachment: !isMobile && backgroundUrl ? 'fixed' : undefined,
       backgroundSize: backgroundUrl ? 'cover' : undefined,
       backgroundPosition: backgroundUrl ? 'center center' : undefined,
       backgroundRepeat: backgroundUrl ? 'no-repeat' : undefined,
       backgroundColor: !backgroundUrl ? 'var(--surface-page)' : undefined,
       '--card-text-color': redesignedTheme?.cardTextColor || '#0f172a'
     }}>
+      {isMobile && backgroundUrl ? (
+        <div className="fixed inset-0 -z-10" style={{ backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center center', backgroundRepeat: 'no-repeat' }} />
+      ) : null}
       
       {backgroundUrl ? (
         <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: withOpacity('#ffffff', 1 - backgroundImageOpacity) }} />
@@ -239,8 +259,8 @@ export default function AppLayout({ children }) {
       ) : null}
       <div className="relative flex min-h-screen overflow-x-hidden">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl transition md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
-          style={{ backgroundImage: sidebarBackgroundImage, ...sidebarBackdrop }}
+          className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl ${menuAnimEnabled ? 'transition' : ''} md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden overflow-y-auto overscroll-contain ${mobileOpen ? mobileOpenClasses : mobileClosedClasses}`}
+          style={{ backgroundImage: sidebarBackgroundImage, ...sidebarBackdrop, transitionDuration: menuAnimEnabled ? `${menuAnimDuration}ms` : undefined }}
         >
           <div className="flex items-center justify-between">
             <Link to="/dashboard" className="flex items-center gap-3" onClick={closeMobile}>
