@@ -8,6 +8,7 @@ import SectionCard from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { createLeaveRequest, fetchLeaveBalances, fetchLeaveRequests, fetchLeaveTypes } from '../services/leaveService';
+import { countKenyaLeaveDays } from '../utils/leaveCalendar';
 import { getAvailableBalanceDays } from '../utils/leave';
 
 const initialForm = {
@@ -25,16 +26,7 @@ const calculateRequestedDays = (startDate, endDate) => {
     return 0;
   }
 
-  const effectiveEnd = endDate || startDate;
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${effectiveEnd}T00:00:00`);
-  const diff = end.getTime() - start.getTime();
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diff < 0) {
-    return 0;
-  }
-
-  return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1;
+  return countKenyaLeaveDays(startDate, endDate || startDate);
 };
 
 export default function LeaveApplyPage() {

@@ -60,7 +60,8 @@ export default function SettingsPage() {
       ? [
           ['kpi', 'KPI Matrix Page'],
           ['performance', 'Performance Dashboard'],
-          ['backgrounds', 'Backgrounds']
+          ['backgrounds', 'Backgrounds'],
+          ['documents', 'Documents Page']
         ]
       : [
         ['branding', 'Branding'],

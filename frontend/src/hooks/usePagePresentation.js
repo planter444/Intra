@@ -112,6 +112,9 @@ export const resolvePagePresentationKey = (pathname = '') => {
   if (pathname.startsWith('/leaves')) {
     return 'leave';
   }
+  if (pathname.startsWith('/leave-status')) {
+    return 'leave';
+  }
   if (pathname.startsWith('/kpi-matrix')) {
     return 'kpi';
   }

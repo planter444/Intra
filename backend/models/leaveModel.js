@@ -270,7 +270,7 @@ const listRequests = async ({ viewerId, userId, role, status } = {}) => {
   const clauses = [];
   const params = [];
 
-  if (role === 'employee' || role === 'admin') {
+  if (role === 'employee') {
     params.push(viewerId);
     clauses.push(`lr.user_id = $${params.length}`);
   }
@@ -318,6 +318,63 @@ const listRequests = async ({ viewerId, userId, role, status } = {}) => {
     requests.push(await findRequestById(row.id));
   }
   return requests;
+};
+
+const listApprovedRequestsInRange = async ({ startDate, endDate }) => {
+  const result = await query(
+    `
+      SELECT
+        lr.id,
+        lr.user_id,
+        lr.leave_type_id,
+        lr.start_date,
+        lr.end_date,
+        lr.days_requested,
+        lr.reason,
+        lr.status,
+        lr.created_at,
+        lr.updated_at,
+        lt.code,
+        lt.label,
+        u.first_name,
+        u.last_name,
+        u.employee_no,
+        u.email,
+        u.position_title,
+        u.department_id,
+        d.name AS department_name
+      FROM leave_requests lr
+      INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+      INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
+      LEFT JOIN departments d ON d.id = u.department_id
+      WHERE lr.status = 'approved'
+        AND lr.start_date <= $2
+        AND lr.end_date >= $1
+      ORDER BY lr.start_date ASC, lr.created_at ASC
+    `,
+    [startDate, endDate]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    leaveTypeId: row.leave_type_id,
+    leaveTypeCode: row.code,
+    leaveTypeLabel: row.label,
+    employeeName: `${row.first_name} ${row.last_name}`,
+    employeeNo: row.employee_no,
+    employeeEmail: row.email,
+    employeePositionTitle: row.position_title,
+    employeeDepartmentId: row.department_id,
+    employeeDepartmentName: row.department_name,
+    startDate: formatDateOnly(row.start_date),
+    endDate: formatDateOnly(row.end_date),
+    daysRequested: Number(row.days_requested),
+    reason: row.reason,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }));
 };
 
 const updateRequestStatus = async ({ id, status, supervisorApproverId, hrApproverId, ceoApproverId, supervisorComment, hrComment, ceoComment }) => {
@@ -483,6 +540,7 @@ module.exports = {
   createRequest,
   findRequestById,
   listRequests,
+  listApprovedRequestsInRange,
   updateRequestStatus,
   updateRequestDetails,
   listRequestsForUserCleanup,

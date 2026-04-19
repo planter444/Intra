@@ -20,7 +20,8 @@ const routeMap = {
   settings: '/settings',
   audit: '/audit-logs',
   kpi: '/kpi-matrix',
-  performance: '/performance-dashboard'
+  performance: '/performance-dashboard',
+  leave_status: '/leave-status'
 };
 
 const labelKeyMap = {
@@ -43,16 +44,17 @@ const iconMap = {
   settings: Settings,
   audit: ShieldCheck,
   kpi: Table,
-  performance: BarChart2
+  performance: BarChart2,
+  leave_status: ClipboardList
 };
 
 const defaultNavigationByRole = {
   employee: ['dashboard', 'profile', 'leaves', 'documents'],
   supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
-  admin: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'audit'],
-  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'settings', 'kpi', 'performance'],
-  finance: ['dashboard', 'kpi', 'performance', 'settings']
+  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'audit'],
+  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'kpi', 'performance'],
+  finance: ['dashboard', 'leave_status', 'kpi', 'performance', 'settings']
 };
 
 export default function AppLayout({ children }) {
@@ -88,7 +90,7 @@ export default function AppLayout({ children }) {
       key,
       label: user?.role === 'supervisor' && key === 'employees'
         ? 'My Team'
-        : settings?.labels?.[labelKeyMap[key]] || key.charAt(0).toUpperCase() + key.slice(1),
+        : settings?.labels?.[labelKeyMap[key]] || (key === 'leave_status' ? 'Leave Status' : key.charAt(0).toUpperCase() + key.slice(1)),
       path: routeMap[key]
     }));
   }, [settings, user]);

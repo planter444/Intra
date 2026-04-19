@@ -24,7 +24,7 @@ const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition })
 };
 
 const canAccessUserDocuments = (currentUser, targetUserId) => {
-  if (currentUser.role === 'ceo') {
+  if (['ceo', 'admin', 'finance'].includes(currentUser.role)) {
     return true;
   }
 

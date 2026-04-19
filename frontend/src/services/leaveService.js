@@ -30,6 +30,11 @@ export const fetchLeaveRequests = async (params = {}) => {
   return data.requests;
 };
 
+export const fetchLeaveOverview = async (params = {}) => {
+  const { data } = await api.get('/leaves/overview', { params });
+  return data;
+};
+
 export const fetchLeaveRequest = async (id) => {
   const { data } = await api.get(`/leaves/requests/${id}`);
   return data.request;

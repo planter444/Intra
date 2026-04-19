@@ -185,6 +185,24 @@ const normalizeUpdatesByRole = (currentUser, updates = {}) => {
     });
   }
 
+  if (updates.labels) {
+    safe.labels = {};
+    if (Object.prototype.hasOwnProperty.call(updates.labels, 'documentsModuleTitle')) {
+      safe.labels.documentsModuleTitle = updates.labels.documentsModuleTitle;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates.labels, 'documentsSubtitle')) {
+      safe.labels.documentsSubtitle = updates.labels.documentsSubtitle;
+    }
+  }
+
+  if (Array.isArray(updates.folders)) {
+    safe.folders = updates.folders;
+  }
+
+  if (Array.isArray(updates.documentCategories)) {
+    safe.documentCategories = updates.documentCategories;
+  }
+
   return safe;
 };
 

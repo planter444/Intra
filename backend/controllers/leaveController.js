@@ -4,6 +4,8 @@ const leaveModel = require('../models/leaveModel');
 const userModel = require('../models/userModel');
 const { logAction } = require('../services/auditService');
 const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolveDocumentPath, saveDocument } = require('../services/documentService');
+const { sendLeaveDecisionEmail } = require('../services/mailService');
+const { countKenyaLeaveDays, formatDateOnly, getNextWorkingDate } = require('../services/leaveCalendarService');
 
 const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
@@ -27,6 +29,28 @@ const mapTimelineEvents = (request, auditTrail) => {
       decision: request.status === 'approved' ? 'approved' : request.status === 'rejected' ? 'rejected' : null
     }
   };
+};
+
+const oversightRoles = ['admin', 'ceo', 'finance'];
+
+const canViewOversightLeaveData = (role) => oversightRoles.includes(role);
+
+const sendLeaveDecisionNotification = async ({ request, status, reviewerName, comment }) => {
+  if (!request?.employeeEmail || !['approved', 'rejected'].includes(status)) {
+    return;
+  }
+
+  await sendLeaveDecisionEmail({
+    toEmail: request.employeeEmail,
+    toName: request.employeeName,
+    leaveTypeLabel: request.leaveTypeLabel,
+    startDate: request.startDate,
+    endDate: request.endDate,
+    status,
+    reviewerName,
+    comment,
+    returnDate: status === 'approved' ? getNextWorkingDate(request.endDate) : null
+  });
 };
 
 const deleteRequestPermanently = async (req, res, next) => {
@@ -81,15 +105,8 @@ const sendRemoteDocument = async ({ res, url, mimeType, fileName }) => {
 };
 
 const calculateRequestedDays = (startDate, endDate) => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diff = end.getTime() - start.getTime();
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diff < 0) {
-    return null;
-  }
-
-  return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1;
+  const days = countKenyaLeaveDays(startDate, endDate);
+  return days && days > 0 ? days : null;
 };
 
 const filterGenderRestrictedItems = (items, gender) => items.filter((item) => {
@@ -105,7 +122,7 @@ const filterGenderRestrictedItems = (items, gender) => items.filter((item) => {
 });
 
 const canAccessRequest = (currentUser, request) => {
-  if (['admin', 'ceo'].includes(currentUser.role)) {
+  if (canViewOversightLeaveData(currentUser.role)) {
     return true;
   }
 
@@ -222,7 +239,7 @@ const listLeaveTypes = async (req, res, next) => {
 
 const getBalances = async (req, res, next) => {
   try {
-    const userId = req.query.userId && (req.user.role === 'ceo' || req.user.role === 'admin')
+    const userId = req.query.userId && canViewOversightLeaveData(req.user.role)
       ? req.query.userId
       : req.user.id;
     const targetUser = String(userId) === String(req.user.id) ? req.user : await userModel.findById(userId);
@@ -237,12 +254,86 @@ const listRequests = async (req, res, next) => {
   try {
     const requests = await leaveModel.listRequests({
       viewerId: req.user.id,
-      userId: req.user.role === 'employee' ? req.user.id : req.user.role === 'ceo' ? req.query.userId : undefined,
+      userId: req.user.role === 'employee' ? req.user.id : canViewOversightLeaveData(req.user.role) ? req.query.userId : undefined,
       role: req.user.role,
       status: req.query.status
     });
 
     res.json({ requests });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getLeaveOverview = async (req, res, next) => {
+  try {
+    if (!canViewOversightLeaveData(req.user.role)) {
+      return res.status(403).json({ message: 'You do not have permission to view the leave overview.' });
+    }
+
+    const now = new Date();
+    const selectedYear = Math.max(2000, Math.min(2100, Number(req.query.year) || now.getFullYear()));
+    const yearStart = `${selectedYear}-01-01`;
+    const yearEnd = `${selectedYear}-12-31`;
+    const today = formatDateOnly(now);
+    const [users, approvedRequests, currentApprovedRequests] = await Promise.all([
+      userModel.listAll(),
+      leaveModel.listApprovedRequestsInRange({ startDate: yearStart, endDate: yearEnd }),
+      leaveModel.listApprovedRequestsInRange({ startDate: today, endDate: today })
+    ]);
+
+    const requestsByUserId = approvedRequests.reduce((accumulator, request) => {
+      const key = String(request.userId);
+      accumulator[key] = accumulator[key] || [];
+      accumulator[key].push(request);
+      return accumulator;
+    }, {});
+
+    const currentRequestsByUserId = currentApprovedRequests.reduce((accumulator, request) => {
+      const key = String(request.userId);
+      accumulator[key] = accumulator[key] || [];
+      accumulator[key].push(request);
+      return accumulator;
+    }, {});
+
+    const employees = users
+      .filter((entry) => entry.isActive && !entry.isDeleted && entry.role !== 'ceo')
+      .map((employee) => {
+        const employeeRequests = (requestsByUserId[String(employee.id)] || []).sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
+        const currentLeave = (currentRequestsByUserId[String(employee.id)] || [])
+          .sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)))
+          .find((request) => request.startDate <= today && request.endDate >= today) || null;
+
+        return {
+          id: employee.id,
+          employeeNo: employee.employeeNo,
+          fullName: employee.fullName,
+          email: employee.email,
+          departmentName: employee.departmentName,
+          positionTitle: employee.positionTitle,
+          role: employee.role,
+          roleTitle: employee.roleTitle,
+          currentStatus: currentLeave ? 'At Leave' : 'At Work',
+          currentLeave: currentLeave ? {
+            id: currentLeave.id,
+            leaveTypeLabel: currentLeave.leaveTypeLabel,
+            startDate: currentLeave.startDate,
+            endDate: currentLeave.endDate,
+            daysRequested: currentLeave.daysRequested,
+            returnDate: getNextWorkingDate(currentLeave.endDate)
+          } : null,
+          approvedRequests: employeeRequests,
+          nextReturnDate: currentLeave ? getNextWorkingDate(currentLeave.endDate) : null
+        };
+      })
+      .sort((left, right) => {
+        if (left.currentStatus !== right.currentStatus) {
+          return left.currentStatus === 'At Leave' ? -1 : 1;
+        }
+        return left.fullName.localeCompare(right.fullName);
+      });
+
+    res.json({ year: selectedYear, employees });
   } catch (error) {
     next(error);
   }
@@ -491,6 +582,15 @@ const decideRequest = async (req, res, next) => {
         ipAddress: req.ip
       });
 
+      if (nextStatus === 'rejected') {
+        sendLeaveDecisionNotification({
+          request: updatedRequest,
+          status: nextStatus,
+          reviewerName: req.user.fullName,
+          comment
+        }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+      }
+
       return res.json({ request: updatedRequest });
     }
 
@@ -526,6 +626,15 @@ const decideRequest = async (req, res, next) => {
         metadata: { comment },
         ipAddress: req.ip
       });
+
+      if (['approved', 'rejected'].includes(nextStatus)) {
+        sendLeaveDecisionNotification({
+          request: updatedRequest,
+          status: nextStatus,
+          reviewerName: req.user.fullName,
+          comment
+        }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+      }
 
       return res.json({ request: updatedRequest });
     }
@@ -565,6 +674,13 @@ const decideRequest = async (req, res, next) => {
         ipAddress: req.ip
       });
 
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: decision === 'approve' ? 'approved' : 'rejected',
+        reviewerName: req.user.fullName,
+        comment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
       return res.json({ request: updatedRequest });
     }
 
@@ -599,6 +715,13 @@ const decideRequest = async (req, res, next) => {
         ipAddress: req.ip
       });
 
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: decision === 'approve' ? 'approved' : 'rejected',
+        reviewerName: req.user.fullName,
+        comment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
       return res.json({ request: updatedRequest });
     }
 
@@ -612,6 +735,7 @@ module.exports = {
   listLeaveTypes,
   getBalances,
   listRequests,
+  getLeaveOverview,
   getRequest,
   createRequest,
   updateRequest,

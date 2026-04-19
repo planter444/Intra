@@ -12,6 +12,7 @@ export default function PageHeader({ title, subtitle, actions, animationOrder = 
     : path.startsWith('/profile') ? 'profile'
     : path.startsWith('/documents') ? 'documents'
     : path.startsWith('/leaves') ? 'leave'
+    : path.startsWith('/leave-status') ? 'leave'
     : path.startsWith('/kpi-matrix') ? 'kpi'
     : path.startsWith('/performance-dashboard') ? 'performance'
     : path.startsWith('/settings') ? 'settings'

@@ -17,6 +17,7 @@ import {
   fetchLeaveTypes,
   updateLeaveRequest
 } from '../services/leaveService';
+import { countKenyaLeaveDays } from '../utils/leaveCalendar';
 import { formatDateRangeDisplay, formatDateTimeDisplay, formatStatusLabel, normalizeDateInput } from '../utils/formatters';
 import { getAvailableBalanceDays } from '../utils/leave';
 
@@ -61,15 +62,7 @@ const calculateRequestedDays = (startDate, endDate) => {
     return 0;
   }
 
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diff = end.getTime() - start.getTime();
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diff < 0) {
-    return 0;
-  }
-
-  return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1;
+  return countKenyaLeaveDays(startDate, endDate);
 };
 
 const getToday = () => new Date().toISOString().split('T')[0];

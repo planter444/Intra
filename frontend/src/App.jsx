@@ -16,6 +16,7 @@ import AuditLogsPage from './pages/AuditLogsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import KPIMatrixPage from './pages/KPIMatrixPage';
 import PerformanceDashboard from './pages/PerformanceDashboard';
+import LeaveStatusBoardPage from './pages/LeaveStatusBoardPage';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, loading, user } = useAuth();
@@ -57,10 +58,11 @@ export default function App() {
       <Route path="/" element={<LandingRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DashboardPage /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><ProfilePage /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DashboardPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><ProfilePage /></ProtectedRoute>} />
       <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
       <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeavesPage /></ProtectedRoute>} />
+      <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><LeaveStatusBoardPage /></ProtectedRoute>} />
       <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
       <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DocumentsPage /></ProtectedRoute>} />
