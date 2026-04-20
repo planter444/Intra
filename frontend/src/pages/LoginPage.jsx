@@ -17,7 +17,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      navigate(user.role === 'employee' ? '/profile' : '/dashboard', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, user, navigate]);
 

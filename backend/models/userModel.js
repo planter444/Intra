@@ -12,6 +12,7 @@ const baseSelect = `
     u.role_title,
     u.gender,
     u.department_id,
+    u.joined_at,
     d.name AS department_name,
     u.supervisor_id,
     s.first_name AS supervisor_first_name,
@@ -40,6 +41,7 @@ const authSelect = `
     u.role_title,
     u.gender,
     u.department_id,
+    u.joined_at,
     d.name AS department_name,
     u.supervisor_id,
     s.first_name AS supervisor_first_name,
@@ -74,6 +76,7 @@ const mapUser = (row) => {
     roleTitle: row.role === 'admin' ? 'IT Officer' : (row.role === 'finance' ? 'Finance Officer' : row.role_title),
     gender: row.gender,
     departmentId: row.department_id,
+    joinedAt: row.joined_at,
     departmentName: row.department_name === 'Human Resources' ? 'Executive Office' : row.department_name,
     supervisorId: row.supervisor_id,
     supervisorName: row.supervisor_first_name ? `${row.supervisor_first_name} ${row.supervisor_last_name}` : null,
@@ -148,7 +151,7 @@ const listAll = async ({ includeDeleted = false, role, departmentId, supervisorI
   return result.rows.map(mapUser);
 };
 
-const create = async ({ employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, positionTitle, passwordHash }) => {
+const create = async ({ employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, joinedAt, positionTitle, passwordHash }) => {
   const result = await query(
     `
       INSERT INTO users (
@@ -162,13 +165,14 @@ const create = async ({ employeeNo, firstName, lastName, email, phone, role, rol
         gender,
         department_id,
         supervisor_id,
+        joined_at,
         position_title,
         password_hash
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING id
     `,
-    [employeeNo || null, firstName, lastName, email, phone, role, roleTitle || null, gender || null, departmentId, supervisorId, positionTitle, passwordHash]
+    [employeeNo || null, firstName, lastName, email, phone, role, roleTitle || null, gender || null, departmentId, supervisorId, joinedAt || null, positionTitle, passwordHash]
   );
 
   return findById(result.rows[0].id);
@@ -186,6 +190,7 @@ const update = async (id, payload) => {
     gender: 'gender',
     departmentId: 'department_id',
     supervisorId: 'supervisor_id',
+    joinedAt: 'joined_at',
     positionTitle: 'position_title',
     passwordHash: 'password_hash',
     isActive: 'is_active',

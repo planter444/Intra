@@ -75,6 +75,29 @@ const canViewUser = async (currentUser, targetUserId) => {
 
 const normalizeEmailInput = (email) => String(email || '').trim();
 
+const normalizeJoinedAtInput = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parsed = new Date(`${value}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (parsed.getTime() <= today.getTime()) {
+        return value;
+      }
+    }
+  }
+
+  return 'invalid';
+};
+
 const ensureEmailAvailable = async ({ email, currentUserId }) => {
   const existingUser = await userModel.findByEmail(normalizeEmailInput(email));
 
@@ -123,8 +146,9 @@ const getProfile = async (req, res, next) => {
 
 const createUser = async (req, res, next) => {
   try {
-    const { employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, positionTitle, password } = req.body;
+    const { employeeNo, firstName, lastName, email, phone, role, roleTitle, gender, departmentId, supervisorId, joinedAt, positionTitle, password } = req.body;
     const normalizedEmail = normalizeEmailInput(email);
+    const normalizedJoinedAt = normalizeJoinedAtInput(joinedAt);
 
     if (!firstName || !lastName || !normalizedEmail || !role || !password) {
       return res.status(400).json({ message: 'Names, email, role, and password are required.' });
@@ -141,6 +165,10 @@ const createUser = async (req, res, next) => {
 
     if (phone && !/^\d+$/.test(String(phone))) {
       return res.status(400).json({ message: 'Phone number must contain digits only.' });
+    }
+
+    if (normalizedJoinedAt === 'invalid') {
+      return res.status(400).json({ message: 'Joined date must be a valid past or current date.' });
     }
 
     const emailConflictMessage = await ensureEmailAvailable({ email: normalizedEmail });
@@ -167,6 +195,7 @@ const createUser = async (req, res, next) => {
       gender: gender || null,
       departmentId: departmentId || null,
       supervisorId: supervisorId || null,
+      joinedAt: normalizedJoinedAt,
       positionTitle,
       passwordHash
     });
@@ -194,9 +223,14 @@ const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const normalizedEmail = Object.prototype.hasOwnProperty.call(req.body, 'email') ? normalizeEmailInput(req.body.email) : undefined;
+    const normalizedJoinedAt = normalizeJoinedAtInput(req.body.joinedAt);
 
     if (!canManageUser(req.user, id)) {
       return res.status(403).json({ message: 'You do not have permission to update this profile.' });
+    }
+
+    if (normalizedJoinedAt === 'invalid') {
+      return res.status(400).json({ message: 'Joined date must be a valid past or current date.' });
     }
 
     const target = await userModel.findById(id);
@@ -263,6 +297,10 @@ const updateUser = async (req, res, next) => {
 
       if (Object.prototype.hasOwnProperty.call(req.body, 'departmentId')) {
         payload.departmentId = req.body.departmentId || null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body, 'joinedAt')) {
+        payload.joinedAt = normalizedJoinedAt;
       }
 
       if (Object.prototype.hasOwnProperty.call(req.body, 'supervisorId')) {

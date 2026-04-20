@@ -22,7 +22,7 @@ router.use(authenticate);
 router.get('/types', listLeaveTypes);
 router.get('/balances', getBalances);
 router.get('/requests', listRequests);
-router.get('/overview', authorize('admin', 'ceo', 'finance'), getLeaveOverview);
+router.get('/overview', authorize('employee', 'supervisor', 'admin', 'ceo', 'finance'), getLeaveOverview);
 router.get('/requests/:id', getRequest);
 router.get('/requests/:id/supporting-document', downloadSupportingDocument);
 router.post('/requests', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), createRequest);

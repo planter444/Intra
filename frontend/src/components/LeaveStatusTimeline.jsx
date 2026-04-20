@@ -31,9 +31,15 @@ const getStageStatus = (request, index, totalStages) => {
 };
 
 export default function LeaveStatusTimeline({ request, actingHrLabel = 'CEO', compact = false }) {
+  const hasSupervisorStage = Boolean(
+    request?.requiresSupervisorReview
+    || request?.status === 'pending_supervisor'
+    || (request?.supervisorApproverId && (request?.hrApproverId || request?.ceoApproverId || request?.supervisorComment))
+  );
+
   const stages = [
     { key: 'applied', label: 'Applied' },
-    ...(request?.supervisorApproverId ? [{ key: 'supervisor', label: 'Supervisor' }] : []),
+    ...(hasSupervisorStage ? [{ key: 'supervisor', label: 'Supervisor' }] : []),
     { key: 'final', label: actingHrLabel || 'CEO' }
   ];
 

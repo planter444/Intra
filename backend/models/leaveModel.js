@@ -145,7 +145,7 @@ const getBalancesForUser = async (userId) => {
   }));
 };
 
-const createRequest = async ({ userId, leaveTypeId, startDate, endDate, daysRequested, reason, status, supervisorApproverId, supportingDocumentName, supportingDocumentStoredName, supportingDocumentMimeType, supportingDocumentSize, supportingDocumentPath }) => {
+const createRequest = async ({ userId, leaveTypeId, startDate, endDate, daysRequested, reason, status, requiresSupervisorReview, supervisorApproverId, supportingDocumentName, supportingDocumentStoredName, supportingDocumentMimeType, supportingDocumentSize, supportingDocumentPath }) => {
   const result = await query(
     `
       INSERT INTO leave_requests (
@@ -156,6 +156,7 @@ const createRequest = async ({ userId, leaveTypeId, startDate, endDate, daysRequ
         days_requested,
         reason,
         status,
+        requires_supervisor_review,
         supervisor_approver_id,
         supporting_document_name,
         supporting_document_stored_name,
@@ -163,7 +164,7 @@ const createRequest = async ({ userId, leaveTypeId, startDate, endDate, daysRequ
         supporting_document_size,
         supporting_document_path
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING id
     `,
     [
@@ -174,6 +175,7 @@ const createRequest = async ({ userId, leaveTypeId, startDate, endDate, daysRequ
       daysRequested,
       reason,
       status,
+      requiresSupervisorReview || false,
       supervisorApproverId || null,
       supportingDocumentName || null,
       supportingDocumentStoredName || null,
@@ -252,6 +254,7 @@ const findRequestById = async (id) => {
     supportingDocumentSize: row.supporting_document_size ? Number(row.supporting_document_size) : null,
     supportingDocumentPath: row.supporting_document_path,
     status: row.status,
+    requiresSupervisorReview: row.requires_supervisor_review,
     supervisorApproverId: row.supervisor_approver_id,
     hrApproverId: row.hr_approver_id,
     ceoApproverId: row.ceo_approver_id,
@@ -406,6 +409,7 @@ const updateRequestDetails = async ({
   daysRequested,
   reason,
   status,
+  requiresSupervisorReview,
   supervisorApproverId,
   supportingDocumentName,
   supportingDocumentStoredName,
@@ -423,12 +427,13 @@ const updateRequestDetails = async ({
         days_requested = COALESCE($5, days_requested),
         reason = COALESCE($6, reason),
         status = COALESCE($7, status),
-        supervisor_approver_id = COALESCE($8, supervisor_approver_id),
-        supporting_document_name = COALESCE($9, supporting_document_name),
-        supporting_document_stored_name = COALESCE($10, supporting_document_stored_name),
-        supporting_document_mime_type = COALESCE($11, supporting_document_mime_type),
-        supporting_document_size = COALESCE($12, supporting_document_size),
-        supporting_document_path = COALESCE($13, supporting_document_path),
+        requires_supervisor_review = COALESCE($8, requires_supervisor_review),
+        supervisor_approver_id = COALESCE($9, supervisor_approver_id),
+        supporting_document_name = COALESCE($10, supporting_document_name),
+        supporting_document_stored_name = COALESCE($11, supporting_document_stored_name),
+        supporting_document_mime_type = COALESCE($12, supporting_document_mime_type),
+        supporting_document_size = COALESCE($13, supporting_document_size),
+        supporting_document_path = COALESCE($14, supporting_document_path),
         updated_at = NOW()
       WHERE id = $1
     `,
@@ -440,6 +445,7 @@ const updateRequestDetails = async ({
       daysRequested,
       reason,
       status,
+      requiresSupervisorReview,
       supervisorApproverId,
       supportingDocumentName,
       supportingDocumentStoredName,
@@ -531,6 +537,36 @@ const getSummaryStats = async () => {
   };
 };
 
+const getSummaryStatsForUser = async (userId) => {
+  const [pendingLeaves, approvedLeaves] = await Promise.all([
+    query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM leave_requests lr
+        INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
+        WHERE lr.user_id = $1
+          AND lr.status IN ('pending_supervisor', 'pending_hr', 'pending_ceo')
+      `,
+      [userId]
+    ),
+    query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM leave_requests lr
+        INNER JOIN users u ON u.id = lr.user_id AND u.is_deleted = FALSE
+        WHERE lr.user_id = $1
+          AND lr.status = 'approved'
+      `,
+      [userId]
+    )
+  ]);
+
+  return {
+    pendingLeaves: pendingLeaves.rows[0]?.total || 0,
+    approvedLeaves: approvedLeaves.rows[0]?.total || 0
+  };
+};
+
 module.exports = {
   listLeaveTypes,
   findLeaveTypeByCode,
@@ -548,5 +584,6 @@ module.exports = {
   cancelRequest,
   applyApprovedDaysToBalance,
   revertApprovedDaysToBalance,
-  getSummaryStats
+  getSummaryStats,
+  getSummaryStatsForUser
 };

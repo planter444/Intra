@@ -14,10 +14,11 @@ CREATE TABLE IF NOT EXISTS users (
   last_name VARCHAR(120) NOT NULL,
   email VARCHAR(180) NOT NULL,
   phone VARCHAR(40),
-  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo', 'finance')),
   role_title VARCHAR(120),
   gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'other')),
   department_id BIGINT REFERENCES departments(id) ON DELETE SET NULL,
+  joined_at DATE,
   position_title VARCHAR(120),
   password_hash TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   supporting_document_size BIGINT,
   supporting_document_path TEXT,
   status VARCHAR(20) NOT NULL DEFAULT 'pending_hr' CHECK (status IN ('pending_supervisor', 'pending_hr', 'pending_ceo', 'approved', 'rejected', 'cancelled')),
+  requires_supervisor_review BOOLEAN NOT NULL DEFAULT FALSE,
   supervisor_approver_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   hr_approver_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
   ceo_approver_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -118,6 +120,9 @@ ADD COLUMN IF NOT EXISTS supervisor_id BIGINT REFERENCES users(id) ON DELETE SET
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS role_title VARCHAR(120);
 
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS joined_at DATE;
+
 UPDATE users
 SET role = 'ceo'
 WHERE role = 'hr';
@@ -125,7 +130,8 @@ WHERE role = 'hr';
 UPDATE users
 SET role_title = CASE
   WHEN role = 'ceo' THEN 'CEO'
-  WHEN role = 'admin' THEN 'Admin'
+  WHEN role = 'admin' THEN 'IT Officer'
+  WHEN role = 'finance' THEN 'Finance Officer'
   WHEN role = 'supervisor' THEN 'Supervisor'
   ELSE COALESCE(NULLIF(role_title, ''), 'Employee')
 END
@@ -135,7 +141,7 @@ ALTER TABLE users
 DROP CONSTRAINT IF EXISTS users_role_check;
 
 ALTER TABLE users
-ADD CONSTRAINT users_role_check CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo'));
+ADD CONSTRAINT users_role_check CHECK (role IN ('employee', 'supervisor', 'admin', 'ceo', 'finance'));
 
 ALTER TABLE users
 DROP CONSTRAINT IF EXISTS users_gender_check;
@@ -195,6 +201,14 @@ ADD COLUMN IF NOT EXISTS supporting_document_path TEXT;
 
 ALTER TABLE leave_requests
 ADD COLUMN IF NOT EXISTS supervisor_comment TEXT;
+
+ALTER TABLE leave_requests
+ADD COLUMN IF NOT EXISTS requires_supervisor_review BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE leave_requests
+SET requires_supervisor_review = TRUE
+WHERE status = 'pending_supervisor'
+   OR supervisor_comment IS NOT NULL;
 
 ALTER TABLE leave_requests
 DROP CONSTRAINT IF EXISTS leave_requests_status_check;

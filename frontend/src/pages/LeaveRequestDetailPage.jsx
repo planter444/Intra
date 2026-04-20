@@ -120,6 +120,11 @@ export default function LeaveRequestDetailPage() {
     () => balances.find((item) => item.code === form.leaveTypeCode),
     [balances, form.leaveTypeCode]
   );
+  const hasSupervisorStage = Boolean(
+    request?.requiresSupervisorReview
+    || request?.status === 'pending_supervisor'
+    || (request?.supervisorApproverId && (request?.hrApproverId || request?.ceoApproverId || request?.supervisorComment))
+  );
 
   const requestedDays = useMemo(
     () => calculateRequestedDays(form.startDate, form.endDate),
@@ -150,8 +155,8 @@ export default function LeaveRequestDetailPage() {
       return true;
     }
 
-    return request.status === 'pending_hr' && !request.supervisorApproverId && !request.hrApproverId && !request.ceoApproverId;
-  }, [request, user?.id]);
+    return request.status === 'pending_hr' && !hasSupervisorStage && !request.hrApproverId && !request.ceoApproverId;
+  }, [hasSupervisorStage, request, user?.id]);
 
   const canSupervisorReview = request && !isRequestOwner && String(request.employeeSupervisorId) === String(user?.id) && request.status === 'pending_supervisor';
   const canOperationalReview = request && !isRequestOwner && (user?.role === 'admin' || user?.role === 'ceo') && request.status === 'pending_hr';
@@ -159,7 +164,7 @@ export default function LeaveRequestDetailPage() {
   const canReviseCeoDecision = request && !isRequestOwner && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
   const timeline = request?.timeline || {
     submitted: { label: 'Submitted', time: request?.createdAt, actorName: request?.employeeName },
-    supervisor: request?.supervisorApproverId ? { label: 'Supervisor Review', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
+    supervisor: hasSupervisorStage ? { label: 'Supervisor Review', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
     ceo: { label: 'CEO Review', time: null, actorName: request?.ceoApproverName || request?.hrApproverName, comment: request?.ceoComment || request?.hrComment, decision: null }
   };
   const hasUnsavedChanges = useMemo(

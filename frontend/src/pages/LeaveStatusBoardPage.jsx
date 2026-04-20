@@ -5,15 +5,28 @@ import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import { fetchLeaveOverview } from '../services/leaveService';
 import { formatDateDisplay, formatDateRangeDisplay } from '../utils/formatters';
-import { formatDateOnly, parseDateOnly } from '../utils/leaveCalendar';
+import { countKenyaLeaveDays, formatDateOnly, parseDateOnly } from '../utils/leaveCalendar';
 import { usePagePresentation } from '../hooks/usePagePresentation';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const getYearBounds = (year) => ({
-  start: new Date(year, 0, 1),
-  end: new Date(year, 11, 31)
-});
+const getYearBounds = (year, joinedAt) => {
+  const today = parseDateOnly(formatDateOnly(new Date()));
+  const baseStart = new Date(year, 0, 1);
+  const joinedDate = parseDateOnly(joinedAt);
+  const start = joinedDate && joinedDate.getTime() > baseStart.getTime() ? joinedDate : baseStart;
+  let end = new Date(year, 11, 31);
+
+  if (today && year === today.getFullYear() && today.getTime() < end.getTime()) {
+    end = today;
+  }
+
+  if (start.getTime() > end.getTime()) {
+    return null;
+  }
+
+  return { start, end };
+};
 
 const shiftDays = (date, days) => {
   const next = new Date(date.getTime());
@@ -21,24 +34,21 @@ const shiftDays = (date, days) => {
   return next;
 };
 
-const getInclusiveDays = (startDate, endDate) => {
-  const start = parseDateOnly(startDate);
-  const end = parseDateOnly(endDate);
-  if (!start || !end || end.getTime() < start.getTime()) {
-    return 0;
-  }
-
-  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-};
+const getWorkingDays = (startDate, endDate) => countKenyaLeaveDays(startDate, endDate) || 0;
 
 const maxDate = (left, right) => (left.getTime() >= right.getTime() ? left : right);
 const minDate = (left, right) => (left.getTime() <= right.getTime() ? left : right);
 
-const buildSegments = (requests, year) => {
-  const bounds = getYearBounds(year);
+const buildSegments = (requests, year, joinedAt) => {
+  const bounds = getYearBounds(year, joinedAt);
+  if (!bounds) {
+    return [];
+  }
+
   const timelineStart = bounds.start;
   const timelineEnd = bounds.end;
-  const yearDays = getInclusiveDays(formatDateOnly(timelineStart), formatDateOnly(timelineEnd));
+  const today = formatDateOnly(new Date());
+  const yearDays = getWorkingDays(formatDateOnly(timelineStart), formatDateOnly(timelineEnd));
   const sorted = [...(requests || [])].sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
   const segments = [];
   let cursor = new Date(timelineStart.getTime());
@@ -62,35 +72,47 @@ const buildSegments = (requests, year) => {
 
     if (segmentStart.getTime() > cursor.getTime()) {
       const workEnd = shiftDays(segmentStart, -1);
-      segments.push({
-        type: 'work',
-        label: 'At Work',
-        startDate: formatDateOnly(cursor),
-        endDate: formatDateOnly(workEnd),
-        days: getInclusiveDays(formatDateOnly(cursor), formatDateOnly(workEnd))
-      });
+      const workDays = getWorkingDays(formatDateOnly(cursor), formatDateOnly(workEnd));
+      if (workDays > 0) {
+        segments.push({
+          type: 'work',
+          label: 'At Work',
+          startDate: formatDateOnly(cursor),
+          endDate: formatDateOnly(workEnd),
+          days: workDays,
+          isCurrent: false
+        });
+      }
     }
 
     const effectiveLeaveStart = maxDate(segmentStart, cursor);
-    segments.push({
-      type: 'leave',
-      label: request.leaveTypeLabel,
-      startDate: formatDateOnly(effectiveLeaveStart),
-      endDate: formatDateOnly(segmentEnd),
-      days: getInclusiveDays(formatDateOnly(effectiveLeaveStart), formatDateOnly(segmentEnd)),
-      requestId: request.id
-    });
+    const leaveDays = getWorkingDays(formatDateOnly(effectiveLeaveStart), formatDateOnly(segmentEnd));
+    if (leaveDays > 0) {
+      segments.push({
+        type: 'leave',
+        label: request.leaveTypeLabel,
+        startDate: formatDateOnly(effectiveLeaveStart),
+        endDate: formatDateOnly(segmentEnd),
+        days: leaveDays,
+        requestId: request.id,
+        isCurrent: false
+      });
+    }
     cursor = shiftDays(segmentEnd, 1);
   });
 
   if (cursor.getTime() <= timelineEnd.getTime()) {
-    segments.push({
-      type: 'work',
-      label: 'At Work',
-      startDate: formatDateOnly(cursor),
-      endDate: formatDateOnly(timelineEnd),
-      days: getInclusiveDays(formatDateOnly(cursor), formatDateOnly(timelineEnd))
-    });
+    const workDays = getWorkingDays(formatDateOnly(cursor), formatDateOnly(timelineEnd));
+    if (workDays > 0) {
+      segments.push({
+        type: 'work',
+        label: 'At Work',
+        startDate: formatDateOnly(cursor),
+        endDate: formatDateOnly(timelineEnd),
+        days: workDays,
+        isCurrent: formatDateOnly(timelineEnd) === today
+      });
+    }
   }
 
   return segments.map((segment) => ({
@@ -174,7 +196,7 @@ export default function LeaveStatusBoardPage() {
   }, [employees, filteredEmployees, selectedEmployeeId]);
 
   const selectedSegments = useMemo(
-    () => (selectedEmployee ? buildSegments(selectedEmployee.approvedRequests || [], year) : []),
+    () => (selectedEmployee ? buildSegments(selectedEmployee.approvedRequests || [], year, selectedEmployee.joinedAt) : []),
     [selectedEmployee, year]
   );
 
@@ -198,7 +220,7 @@ export default function LeaveStatusBoardPage() {
   }, [employees]);
 
   const yearOptions = useMemo(
-    () => Array.from({ length: 7 }, (_, index) => currentYear - 3 + index),
+    () => Array.from({ length: 7 }, (_, index) => currentYear - index),
     [currentYear]
   );
 
@@ -237,7 +259,7 @@ export default function LeaveStatusBoardPage() {
             {!loading && !filteredEmployees.length ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">No employees matched your search.</div> : null}
             {!loading ? filteredEmployees.map((employee) => {
               const isSelected = String(employee.id) === String(selectedEmployee?.id);
-              const miniSegments = buildSegments(employee.approvedRequests || [], year);
+              const miniSegments = buildSegments(employee.approvedRequests || [], year, employee.joinedAt);
               return (
                 <button
                   key={employee.id}
@@ -283,7 +305,7 @@ export default function LeaveStatusBoardPage() {
           >
             {!selectedEmployee ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-sm text-slate-500">Select an employee from the left panel.</div> : (
               <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-400">Current status</p>
                     <p className={`mt-2 text-lg font-semibold ${selectedEmployee.currentStatus === 'At Leave' ? 'text-amber-600' : 'text-emerald-600'}`}>{selectedEmployee.currentStatus}</p>
@@ -296,6 +318,10 @@ export default function LeaveStatusBoardPage() {
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-400">Expected return</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{selectedEmployee.nextReturnDate ? formatDateDisplay(selectedEmployee.nextReturnDate) : 'Already at work'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Joined company</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{selectedEmployee.joinedAt ? formatDateDisplay(selectedEmployee.joinedAt) : 'Not set'}</p>
                   </div>
                 </div>
 
@@ -312,7 +338,7 @@ export default function LeaveStatusBoardPage() {
                           style={{ width: `${segment.widthPercent}%` }}
                           title={`${segment.label}: ${formatDateRangeDisplay(segment.startDate, segment.endDate)}`}
                         >
-                          <span className="truncate">{segment.widthPercent >= 9 ? segment.label : ''}</span>
+                          <span className="truncate">{segment.widthPercent >= 9 ? `${segment.label}${segment.isCurrent ? ' • Current' : ''}` : ''}</span>
                         </div>
                       ))}
                     </div>
@@ -336,6 +362,7 @@ export default function LeaveStatusBoardPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-slate-900">{segment.label}</p>
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{segment.days} day(s)</span>
+                        {segment.isCurrent ? <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</span> : null}
                       </div>
                       <p className="mt-1 text-sm text-slate-600">{formatDateRangeDisplay(segment.startDate, segment.endDate)}</p>
                     </div>

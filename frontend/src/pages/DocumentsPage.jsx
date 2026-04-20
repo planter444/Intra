@@ -45,6 +45,7 @@ export default function DocumentsPage() {
   const [previewState, setPreviewState] = useState(createEmptyPreviewState);
   const [isUploading, setIsUploading] = useState(false);
   const canManageEmployeeDocuments = user.role === 'ceo';
+  const canAddDocumentAddendums = ['ceo', 'admin', 'finance'].includes(user.role);
   const folderOptions = useMemo(
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
     [settings?.folders]
@@ -139,6 +140,12 @@ export default function DocumentsPage() {
       const selectedCategory = documentCategories.find((c) => c.code === uploadState.folderCategoryCode);
       const selectedType = (selectedCategory?.types || []).find((t) => t.code === uploadState.folderLabelCode);
       const finalFolderType = selectedType?.code || 'other';
+
+      if (!canAddDocumentAddendums && (uploadState.folderCategoryCode === '__other' || uploadState.folderLabelCode === '__otherLabel' || finalFolderType === 'other')) {
+        setMessageTone('error');
+        setMessage('Only CEO, IT Officer, and Finance Officer can create custom folder-type or label addendums.');
+        return;
+      }
 
       // If uploading to 'Other', embed the custom labels in the filename for display later
       const needsCustomTags = finalFolderType === 'other' && (uploadState.customCategoryText || uploadState.customLabelText);
@@ -398,6 +405,9 @@ export default function DocumentsPage() {
                 <select value={uploadState.folderCategoryCode} onChange={(e) => {
                   const nextCode = e.target.value;
                   if (nextCode === '__other') {
+                    if (!canAddDocumentAddendums) {
+                      return;
+                    }
                     setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: '__otherLabel' }));
                     return;
                   }
@@ -407,7 +417,7 @@ export default function DocumentsPage() {
                   {documentCategories.map((cat) => (
                     <option key={cat.code} value={cat.code}>{cat.label}</option>
                   ))}
-                  <option value="__other">Other…</option>
+                  {canAddDocumentAddendums ? <option value="__other">Other…</option> : null}
                 </select>
                 {uploadState.folderCategoryCode === '__other' ? (
                   <input className="mt-2" placeholder="Enter folder type" value={uploadState.customCategoryText} onChange={(e) => setUploadState((c) => ({ ...c, customCategoryText: e.target.value }))} />
@@ -415,11 +425,16 @@ export default function DocumentsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Label</label>
-                <select value={uploadState.folderLabelCode} onChange={(e) => setUploadState((c) => ({ ...c, folderLabelCode: e.target.value }))}>
+                <select value={uploadState.folderLabelCode} onChange={(e) => {
+                  if (e.target.value === '__otherLabel' && !canAddDocumentAddendums) {
+                    return;
+                  }
+                  setUploadState((c) => ({ ...c, folderLabelCode: e.target.value }));
+                }}>
                   {(documentCategories.find((c) => c.code === uploadState.folderCategoryCode)?.types || []).map((t) => (
                     <option key={t.code} value={t.code}>{t.label}</option>
                   ))}
-                  <option value="__otherLabel">Other…</option>
+                  {canAddDocumentAddendums ? <option value="__otherLabel">Other…</option> : null}
                 </select>
                 {uploadState.folderLabelCode === '__otherLabel' ? (
                   <input className="mt-2" placeholder="Enter label" value={uploadState.customLabelText} onChange={(e) => setUploadState((c) => ({ ...c, customLabelText: e.target.value }))} />

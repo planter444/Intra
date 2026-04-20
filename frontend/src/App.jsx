@@ -43,7 +43,7 @@ function LandingRedirect() {
     return <Navigate to="/login" replace />;
   }
 
-  return <Navigate to={user?.role === 'employee' ? '/profile' : '/dashboard'} replace />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 export default function App() {
@@ -62,10 +62,10 @@ export default function App() {
       <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><ProfilePage /></ProtectedRoute>} />
       <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
       <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeavesPage /></ProtectedRoute>} />
-      <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><LeaveStatusBoardPage /></ProtectedRoute>} />
+      <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveStatusBoardPage /></ProtectedRoute>} />
       <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
       <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
-      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><DocumentsPage /></ProtectedRoute>} />
+      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DocumentsPage /></ProtectedRoute>} />
       <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['ceo', 'finance']}><KPIMatrixPage /></ProtectedRoute>} />
       <Route path="/performance-dashboard" element={<ProtectedRoute allowedRoles={['ceo', 'finance']}><PerformanceDashboard /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><SettingsPage /></ProtectedRoute>} />

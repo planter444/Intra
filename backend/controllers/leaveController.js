@@ -11,10 +11,16 @@ const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
   const supervisorEvent = auditTrail.find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT'].includes(entry.action));
   const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'admin'].includes(entry.actorRole));
+  const hasSupervisorStage = Boolean(
+    request.requiresSupervisorReview
+    || supervisorEvent
+    || request.status === 'pending_supervisor'
+    || (request.supervisorApproverId && (request.hrApproverId || request.ceoApproverId || request.supervisorComment))
+  );
 
   return {
     submitted: submittedEvent ? { label: 'Submitted', time: submittedEvent.createdAt, actorName: submittedEvent.actorName } : { label: 'Submitted', time: request.createdAt, actorName: request.employeeName },
-    supervisor: request.supervisorApproverId ? {
+    supervisor: hasSupervisorStage ? {
       label: 'Supervisor Review',
       time: supervisorEvent?.createdAt || null,
       actorName: request.supervisorApproverName || supervisorEvent?.actorName || null,
@@ -34,6 +40,25 @@ const mapTimelineEvents = (request, auditTrail) => {
 const oversightRoles = ['admin', 'ceo', 'finance'];
 
 const canViewOversightLeaveData = (role) => oversightRoles.includes(role);
+const canAccessLeaveOverview = (role) => ['employee', 'supervisor', ...oversightRoles].includes(role);
+
+const getLeaveOverviewUsers = async (currentUser) => {
+  if (canViewOversightLeaveData(currentUser.role)) {
+    return userModel.listAll();
+  }
+
+  if (currentUser.role === 'supervisor') {
+    const [self, directReports] = await Promise.all([
+      userModel.findById(currentUser.id),
+      userModel.listAll({ supervisorId: currentUser.id })
+    ]);
+
+    return [self, ...directReports.filter((entry) => String(entry.id) !== String(currentUser.id))].filter(Boolean);
+  }
+
+  const self = await userModel.findById(currentUser.id);
+  return self ? [self] : [];
+};
 
 const sendLeaveDecisionNotification = async ({ request, status, reviewerName, comment }) => {
   if (!request?.employeeEmail || !['approved', 'rejected'].includes(status)) {
@@ -202,6 +227,7 @@ const buildLeaveRouting = async (user) => {
   const shouldStartWithSupervisor = user.role === 'employee' && !requesterIsSupervisor && supervisor && supervisor.isActive && !supervisor.isDeleted;
 
   return {
+    requiresSupervisorReview: shouldStartWithSupervisor,
     initialStatus: shouldStartWithSupervisor ? 'pending_supervisor' : 'pending_hr',
     supervisorApproverId: shouldStartWithSupervisor ? supervisor.id : null
   };
@@ -267,7 +293,7 @@ const listRequests = async (req, res, next) => {
 
 const getLeaveOverview = async (req, res, next) => {
   try {
-    if (!canViewOversightLeaveData(req.user.role)) {
+    if (!canAccessLeaveOverview(req.user.role)) {
       return res.status(403).json({ message: 'You do not have permission to view the leave overview.' });
     }
 
@@ -277,19 +303,20 @@ const getLeaveOverview = async (req, res, next) => {
     const yearEnd = `${selectedYear}-12-31`;
     const today = formatDateOnly(now);
     const [users, approvedRequests, currentApprovedRequests] = await Promise.all([
-      userModel.listAll(),
+      getLeaveOverviewUsers(req.user),
       leaveModel.listApprovedRequestsInRange({ startDate: yearStart, endDate: yearEnd }),
       leaveModel.listApprovedRequestsInRange({ startDate: today, endDate: today })
     ]);
+    const scopedUserIds = new Set(users.map((entry) => String(entry.id)));
 
-    const requestsByUserId = approvedRequests.reduce((accumulator, request) => {
+    const requestsByUserId = approvedRequests.filter((request) => scopedUserIds.has(String(request.userId))).reduce((accumulator, request) => {
       const key = String(request.userId);
       accumulator[key] = accumulator[key] || [];
       accumulator[key].push(request);
       return accumulator;
     }, {});
 
-    const currentRequestsByUserId = currentApprovedRequests.reduce((accumulator, request) => {
+    const currentRequestsByUserId = currentApprovedRequests.filter((request) => scopedUserIds.has(String(request.userId))).reduce((accumulator, request) => {
       const key = String(request.userId);
       accumulator[key] = accumulator[key] || [];
       accumulator[key].push(request);
@@ -309,6 +336,7 @@ const getLeaveOverview = async (req, res, next) => {
           employeeNo: employee.employeeNo,
           fullName: employee.fullName,
           email: employee.email,
+          joinedAt: employee.joinedAt,
           departmentName: employee.departmentName,
           positionTitle: employee.positionTitle,
           role: employee.role,
@@ -386,6 +414,7 @@ const createRequest = async (req, res, next) => {
       daysRequested,
       reason,
       status: routing.initialStatus,
+      requiresSupervisorReview: routing.requiresSupervisorReview,
       supervisorApproverId: routing.supervisorApproverId,
       ...supportingDocument
     });
@@ -444,6 +473,7 @@ const updateRequest = async (req, res, next) => {
       daysRequested,
       reason: reason ?? request.reason,
       status: routing.initialStatus,
+      requiresSupervisorReview: routing.requiresSupervisorReview,
       supervisorApproverId: routing.supervisorApproverId,
       ...supportingDocument
     });

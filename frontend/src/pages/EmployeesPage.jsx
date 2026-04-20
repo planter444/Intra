@@ -13,7 +13,7 @@ const privilegedRoleOptions = [
   { value: 'supervisor', role: 'supervisor', roleTitle: 'Supervisor', label: 'Supervisor' },
   { value: 'admin', role: 'admin', roleTitle: 'IT Officer', label: 'IT Officer' },
   { value: 'ceo', role: 'ceo', roleTitle: 'CEO', label: 'CEO' },
-  { value: 'finance', role: 'finance', roleTitle: 'Finance', label: 'Finance' }
+  { value: 'finance', role: 'finance', roleTitle: 'Finance Officer', label: 'Finance Officer' }
 ];
 
 const normalizeRoleTitleValue = (value) => String(value || '').trim() || 'Employee';
@@ -41,6 +41,7 @@ const defaultForm = {
   roleSelection: getEmployeeRoleSelection('Employee'),
   departmentId: '',
   supervisorId: '',
+  joinedAt: '',
   positionTitle: '',
   password: ''
 };
@@ -155,6 +156,7 @@ export default function EmployeesPage() {
       roleSelection: getRoleSelection(editingRecord.role, editingRecord.roleTitle),
       departmentId: editingRecord.departmentId || '',
       supervisorId: editingRecord.supervisorId || '',
+      joinedAt: editingRecord.joinedAt || '',
       positionTitle: editingRecord.positionTitle || '',
       password: ''
     });
@@ -189,6 +191,7 @@ export default function EmployeesPage() {
       roleSelection: getRoleSelection(record.role, record.roleTitle),
       departmentId: record.departmentId || '',
       supervisorId: record.supervisorId || '',
+      joinedAt: record.joinedAt || '',
       positionTitle: record.positionTitle || '',
       password: ''
     });
@@ -207,6 +210,7 @@ export default function EmployeesPage() {
       gender: form.gender || null,
       departmentId: form.departmentId || null,
       supervisorId: form.supervisorId || null,
+      joinedAt: form.joinedAt || null,
       role: roleAssignment.role,
       roleTitle: roleAssignment.roleTitle
     };
@@ -358,6 +362,10 @@ export default function EmployeesPage() {
                       <option key={candidate.id} value={candidate.id}>{candidate.fullName}</option>
                     ))}
                 </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Joined date</label>
+                <input type="date" value={form.joinedAt} onChange={(event) => setForm((current) => ({ ...current, joinedAt: event.target.value }))} />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Position title</label>
