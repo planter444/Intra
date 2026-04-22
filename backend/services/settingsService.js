@@ -26,8 +26,47 @@ const mergeSettings = (currentPayload = {}, updates = {}) => ({
 
 const normalizeDepartments = (departments = []) => departments.filter((department) => department?.name !== 'Human Resources');
 
-const normalizeLegacyPayload = (payload = {}) => {
+const ensureDocumentDefaults = (payload = {}) => {
   const nextPayload = JSON.parse(JSON.stringify(payload || {}));
+  const addendumFolder = { code: 'addendum', label: 'Addendum' };
+  const addendumCategory = {
+    code: 'addendum',
+    label: 'Addendum',
+    types: [
+      { code: 'addendum', label: 'Addendum' }
+    ]
+  };
+
+  const folders = Array.isArray(nextPayload.folders) ? nextPayload.folders : [];
+  if (!folders.some((folder) => String(folder?.code || '').trim().toLowerCase() === 'addendum')) {
+    nextPayload.folders = [...folders, addendumFolder];
+  }
+
+  const categories = Array.isArray(nextPayload.documentCategories) ? nextPayload.documentCategories : [];
+  if (!categories.some((category) => String(category?.code || '').trim().toLowerCase() === 'addendum')) {
+    nextPayload.documentCategories = [...categories, addendumCategory];
+  }
+
+  return nextPayload;
+};
+
+const ensureKpiDefaults = (payload = {}) => {
+  const nextPayload = JSON.parse(JSON.stringify(payload || {}));
+  const currentKpi = nextPayload.kpi && typeof nextPayload.kpi === 'object' ? nextPayload.kpi : {};
+
+  nextPayload.kpi = {
+    records: {},
+    ...currentKpi,
+    records: currentKpi.records && typeof currentKpi.records === 'object'
+      ? currentKpi.records
+      : {}
+  };
+
+  return nextPayload;
+};
+
+const normalizeLegacyPayload = (payload = {}) => {
+  const nextPayload = ensureKpiDefaults(ensureDocumentDefaults(JSON.parse(JSON.stringify(payload || {}))));
 
   if (nextPayload.labels?.employeeDirectoryTitle === 'Employee Directory' || nextPayload.labels?.employeeDirectoryTitle === 'Users') {
     nextPayload.labels.employeeDirectoryTitle = defaultSettings.labels.employeeDirectoryTitle;
@@ -201,6 +240,10 @@ const normalizeUpdatesByRole = (currentUser, updates = {}) => {
 
   if (Array.isArray(updates.documentCategories)) {
     safe.documentCategories = updates.documentCategories;
+  }
+
+  if (updates.kpi && typeof updates.kpi === 'object') {
+    safe.kpi = updates.kpi;
   }
 
   return safe;

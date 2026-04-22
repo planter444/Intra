@@ -82,7 +82,9 @@ module.exports = {
       documents: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
       leave: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
       login: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
-      settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
+      settings: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      kpi: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 },
+      performance: { enabled: true, type: 'fade-up', delayMs: 0, durationMs: 420, cardBackgroundColor: '#ffffff', cardBackgroundOpacity: 1 }
     },
     // Background configuration: separate images for Original vs Redesigned UI, optional per-page overrides, and global opacity
     backgrounds: {
@@ -95,7 +97,9 @@ module.exports = {
           documents: '',
           leave: '',
           settings: '',
-          audit: ''
+          audit: '',
+          kpi: '',
+          performance: ''
         }
       },
       redesigned: {
@@ -107,7 +111,9 @@ module.exports = {
           documents: '',
           leave: '',
           settings: '',
-          audit: ''
+          audit: '',
+          kpi: '',
+          performance: ''
         }
       },
       imageOpacity: 1
@@ -124,7 +130,9 @@ module.exports = {
       documents: { title: '', subtitle: '' },
       leave: { title: '', subtitle: '' },
       settings: { title: '', subtitle: '' },
-      audit: { title: '', subtitle: '' }
+      audit: { title: '', subtitle: '' },
+      kpi: { title: '', subtitle: '' },
+      performance: { title: '', subtitle: '' }
     },
     // Menu background blur configuration
     navigationBlur: {
@@ -166,6 +174,7 @@ module.exports = {
     { code: 'id', label: 'ID' },
     { code: 'contracts', label: 'Contracts' },
     { code: 'certificates', label: 'Certificates' },
+    { code: 'addendum', label: 'Addendum' },
     { code: 'branding', label: 'Branding' },
     { code: 'profile', label: 'Profile Photos' },
     { code: 'other', label: 'Other' }
@@ -206,8 +215,18 @@ module.exports = {
         { code: 'contract', label: 'Contract Letter' },
         { code: 'warning', label: 'Warning Letter' }
       ]
+    },
+    {
+      code: 'addendum',
+      label: 'Addendum',
+      types: [
+        { code: 'addendum', label: 'Addendum' }
+      ]
     }
   ],
+  kpi: {
+    records: {}
+  },
   leaveTypes: [
     { code: 'annual', label: 'Annual Leave', defaultDays: 21, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: true },
     { code: 'sick', label: 'Sick Leave', defaultDays: 14, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false },

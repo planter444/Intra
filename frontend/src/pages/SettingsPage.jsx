@@ -10,6 +10,8 @@ import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { restoreSettings, updateSettings } from '../services/settingsService';
 import { uploadDocument } from '../services/documentService';
 import { fetchLeaveRequests, deleteLeaveRequest } from '../services/leaveService';
+import { fetchUsers } from '../services/userService';
+import { KPI_COUNT, getAverageKpiScore, getNormalizedKpiEntry, serializeKpiEntry } from '../utils/kpi';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
@@ -24,6 +26,18 @@ const PAGE_PRESENTATION_OPTIONS = [
 ];
 const PAGE_PRESENTATION_KEYS = ['dashboard', 'login', 'employees', 'profile', 'documents', 'leave', 'kpi', 'performance'];
 const isHexColor = (value) => /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(String(value || '').trim());
+const normalizeKpiScore = (value) => {
+  if (value === '') {
+    return '';
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return '';
+  }
+
+  return Math.max(0, Math.min(100, numericValue));
+};
 
 function SettingsInput({ label, value, onChange, colorPicker = false }) {
   return (
@@ -97,6 +111,8 @@ export default function SettingsPage() {
   const docCategoryRefs = useRef([]);
   const [cleanupLeaves, setCleanupLeaves] = useState([]);
   const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [selectedKpiEmployeeId, setSelectedKpiEmployeeId] = useState('');
 
   useEffect(() => {
     if (settings) {
@@ -122,6 +138,12 @@ export default function SettingsPage() {
   }, [activePage, isCeoOnly]);
 
   useEffect(() => {
+    fetchUsers()
+      .then((results) => setUsers(results.filter((employee) => employee.isActive && !employee.isDeleted && employee.role !== 'ceo')))
+      .catch(() => setUsers([]));
+  }, []);
+
+  useEffect(() => {
     if (!leaveTypeEditor.open) {
       return;
     }
@@ -134,10 +156,40 @@ export default function SettingsPage() {
   const folders = useMemo(() => draft.folders || [], [draft]);
   const documentCategories = useMemo(() => draft.documentCategories || [], [draft]);
   const leaveTypes = useMemo(() => draft.leaveTypes || [], [draft]);
+  const kpiRecordSource = useMemo(
+    () => ({ ...(draft.kpi?.matrix || {}), ...(draft.kpi?.records || {}) }),
+    [draft.kpi?.matrix, draft.kpi?.records]
+  );
+  const kpiEmployees = useMemo(
+    () => [...users].sort((left, right) => left.fullName.localeCompare(right.fullName)),
+    [users]
+  );
+  const selectedKpiEmployee = useMemo(
+    () => kpiEmployees.find((employee) => String(employee.id) === String(selectedKpiEmployeeId)) || kpiEmployees[0] || null,
+    [kpiEmployees, selectedKpiEmployeeId]
+  );
+  const selectedKpiEntry = useMemo(
+    () => selectedKpiEmployee
+      ? getNormalizedKpiEntry(draft.kpi?.records?.[String(selectedKpiEmployee.id)] || draft.kpi?.matrix?.[String(selectedKpiEmployee.id)] || {})
+      : getNormalizedKpiEntry(),
+    [draft.kpi?.matrix, draft.kpi?.records, selectedKpiEmployee]
+  );
+  const selectedKpiAverage = useMemo(() => getAverageKpiScore(selectedKpiEntry), [selectedKpiEntry]);
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft || {}) !== JSON.stringify(settings || {}),
     [draft, settings]
   );
+
+  useEffect(() => {
+    if (!kpiEmployees.length) {
+      setSelectedKpiEmployeeId('');
+      return;
+    }
+
+    if (!kpiEmployees.some((employee) => String(employee.id) === String(selectedKpiEmployeeId))) {
+      setSelectedKpiEmployeeId(String(kpiEmployees[0].id));
+    }
+  }, [kpiEmployees, selectedKpiEmployeeId]);
 
   useUnsavedChangesGuard(hasUnsavedChanges);
 
@@ -148,6 +200,46 @@ export default function SettingsPage() {
         ...current.branding,
         [key]: value
       }
+    }));
+  };
+
+  const setSelectedEmployeeKpiEntry = (updater) => {
+    if (!selectedKpiEmployee) {
+      return;
+    }
+
+    setDraft((current) => {
+      const employeeId = String(selectedKpiEmployee.id);
+      const existingEntry = getNormalizedKpiEntry(current.kpi?.records?.[employeeId] || current.kpi?.matrix?.[employeeId] || {});
+      const nextEntry = typeof updater === 'function' ? updater(existingEntry) : updater;
+
+      return {
+        ...current,
+        kpi: {
+          ...(current.kpi || {}),
+          records: {
+            ...(current.kpi?.records || {}),
+            [employeeId]: serializeKpiEntry(nextEntry)
+          }
+        }
+      };
+    });
+  };
+
+  const updateSelectedKpiCoreRole = (index, value) => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      coreRoles: current.coreRoles.map((role, roleIndex) => roleIndex === index ? value : role)
+    }));
+  };
+
+  const updateSelectedKpiIndicator = (index, key, value) => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      indicators: current.indicators.map((indicator, indicatorIndex) => indicatorIndex === index ? {
+        ...indicator,
+        [key]: key === 'score' ? normalizeKpiScore(value) : value
+      } : indicator)
     }));
   };
 
@@ -639,6 +731,23 @@ export default function SettingsPage() {
         }
       }
     };
+    const normalizedKpiRecords = Object.entries(kpiRecordSource).reduce((accumulator, [employeeId, entry]) => {
+      const serializedEntry = serializeKpiEntry(entry);
+      const hasValues = serializedEntry.coreRoles.some((role) => String(role || '').trim())
+        || serializedEntry.indicators.some((indicator) => String(indicator?.label || '').trim() || indicator?.score !== '');
+
+      if (hasValues) {
+        accumulator[employeeId] = serializedEntry;
+      }
+
+      return accumulator;
+    }, {});
+    const normalizedKpiMatrix = Object.entries(normalizedKpiRecords).reduce((accumulator, [employeeId, entry]) => {
+      accumulator[employeeId] = Array.from({ length: KPI_COUNT }, (_, index) => ({
+        [`k${index + 1}`]: entry.indicators[index]?.score ?? ''
+      })).reduce((scores, item) => ({ ...scores, ...item }), {});
+      return accumulator;
+    }, {});
     const payload = isCeoOnly
       ? {
           departments: normalizedDepartments,
@@ -652,6 +761,12 @@ export default function SettingsPage() {
             leaveModuleTitle: draft.labels?.leaveModuleTitle || '',
             documentsModuleTitle: draft.labels?.documentsModuleTitle || '',
             documentsSubtitle: draft.labels?.documentsSubtitle || ''
+          },
+          interface: normalizedInterface,
+          kpi: {
+            ...(draft.kpi || {}),
+            records: normalizedKpiRecords,
+            matrix: normalizedKpiMatrix
           }
         }
       : {
@@ -660,7 +775,12 @@ export default function SettingsPage() {
           roleTitles: normalizedRoleTitles,
           folders: normalizedFolders,
           documentCategories: normalizedCategories,
-          interface: normalizedInterface
+          interface: normalizedInterface,
+          kpi: {
+            ...(draft.kpi || {}),
+            records: normalizedKpiRecords,
+            matrix: normalizedKpiMatrix
+          }
         };
 
     const nextSettings = await updateSettings(payload);
@@ -685,13 +805,20 @@ export default function SettingsPage() {
     return null;
   }
 
+  const settingsTitle = isCeoOnly ? 'CEO Settings' : isFinanceOnly ? 'Finance Officer Settings' : 'IT Officer System Settings';
+  const settingsSubtitle = isCeoOnly
+    ? 'Manage employee-page settings, documents, leave options, KPI entries, and page presentation for executive workflows.'
+    : isFinanceOnly
+      ? 'Manage finance-approved document addendums plus the KPI and performance content shown for each employee.'
+      : 'Edit major page content, colors, labels, KPI entries, and core HRMS settings from one place.';
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title={isCeoOnly ? 'CEO Settings' : 'IT Officer System Settings'}
-        subtitle={isCeoOnly ? 'Manage employee-page settings, departments, and leave settings.' : 'Edit major page content, colors, labels, and core HRMS settings from one place.'}
+        title={settingsTitle}
+        subtitle={settingsSubtitle}
         actions={[
-          !isCeoOnly ? (
+          user?.role === 'admin' ? (
             <button key="restore" type="button" onClick={handleRestore} className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700">
               Restore KEREA to Default
             </button>
@@ -1368,6 +1495,103 @@ export default function SettingsPage() {
               <label className="mb-2 block text-sm font-medium text-slate-700">Profile subtitle</label>
               <input value={draft.labels?.profileSubtitle || ''} onChange={(event) => setLabel('profileSubtitle', event.target.value)} />
             </div>
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {activePage === 'kpi' ? (
+        <div className="grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
+          <SectionCard title="Employees" subtitle="Choose an employee to set their core roles, KPI wording, and scores.">
+            <div className="space-y-3">
+              {kpiEmployees.length ? kpiEmployees.map((employee) => {
+                const employeeEntry = getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {});
+                const employeeAverage = getAverageKpiScore(employeeEntry);
+                const isSelected = String(employee.id) === String(selectedKpiEmployee?.id);
+
+                return (
+                  <button
+                    key={employee.id}
+                    type="button"
+                    onClick={() => setSelectedKpiEmployeeId(String(employee.id))}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${isSelected ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{employee.fullName}</p>
+                        <p className="mt-1 text-sm text-slate-500">{employee.positionTitle || employee.roleTitle || 'No designation'}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${employeeAverage === null ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'}`}>{employeeAverage ?? '—'}</span>
+                    </div>
+                  </button>
+                );
+              }) : <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-sm text-slate-500">No employees available for KPI setup yet.</div>}
+            </div>
+          </SectionCard>
+
+          <div className="space-y-6">
+            <SectionCard
+              title={selectedKpiEmployee ? selectedKpiEmployee.fullName : 'KPI details'}
+              subtitle={selectedKpiEmployee ? `${selectedKpiEmployee.positionTitle || selectedKpiEmployee.roleTitle || 'No designation'} · Average ${selectedKpiAverage ?? '—'}` : 'Choose an employee to edit their KPI details.'}
+            >
+              {!selectedKpiEmployee ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-sm text-slate-500">Select an employee on the left to begin editing KPI details.</div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <StatCard title="Employee" value={selectedKpiEmployee.fullName} helper="Selected employee record" accent="from-emerald-700 to-green-500" />
+                    <StatCard title="Designation" value={selectedKpiEmployee.positionTitle || selectedKpiEmployee.roleTitle || 'Not set'} helper="Shown on KPI and performance pages" accent="from-sky-700 to-cyan-500" />
+                    <StatCard title="Average score" value={selectedKpiAverage ?? '--'} helper="Average across the scored KPIs" accent="from-violet-700 to-fuchsia-500" />
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-base font-semibold text-slate-900">Core roles</h3>
+                    <p className="mt-1 text-sm text-slate-500">Add up to five responsibility lines that describe this employee’s main roles.</p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      {Array.from({ length: KPI_COUNT }, (_, index) => (
+                        <div key={`core-role-${index}`}>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">Core role {index + 1}</label>
+                          <input value={selectedKpiEntry.coreRoles[index] || ''} onChange={(event) => updateSelectedKpiCoreRole(index, event.target.value)} placeholder="Enter core role" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-base font-semibold text-slate-900">Five KPIs</h3>
+                    <p className="mt-1 text-sm text-slate-500">Set the KPI wording and the employee’s current score for each item.</p>
+                    <div className="mt-4 space-y-4">
+                      {selectedKpiEntry.indicators.map((indicator, index) => (
+                        <div key={`indicator-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),140px]">
+                            <div>
+                              <label className="mb-2 block text-sm font-medium text-slate-700">KPI {index + 1} wording</label>
+                              <input value={indicator.label || ''} onChange={(event) => updateSelectedKpiIndicator(index, 'label', event.target.value)} placeholder="Enter KPI wording" />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium text-slate-700">Score</label>
+                              <input type="number" min="0" max="100" value={indicator.score ?? ''} onChange={(event) => updateSelectedKpiIndicator(index, 'score', event.target.value)} placeholder="0-100" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      ) : null}
+
+      {activePage === 'performance' ? (
+        <SectionCard title="Performance dashboard content" subtitle="The performance dashboard reflects the saved KPI records for each employee.">
+          <div className="grid gap-4 md:grid-cols-3">
+            <StatCard title="Employees ready" value={kpiEmployees.filter((employee) => getAverageKpiScore(getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {})) !== null).length} helper="Employees with at least one KPI score saved" accent="from-emerald-700 to-green-500" />
+            <StatCard title="KPI records" value={Object.keys(kpiRecordSource).length} helper="Employee records available to display" accent="from-sky-700 to-cyan-500" />
+            <StatCard title="Editable roles" value="CEO, IT Officer, Finance" helper="People who can update KPI content" accent="from-violet-700 to-fuchsia-500" />
+          </div>
+          <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+            Save KPI details on the KPI Matrix settings tab and this page will automatically reflect the employee core roles, KPI wording, individual scores, and average score.
           </div>
         </SectionCard>
       ) : null}

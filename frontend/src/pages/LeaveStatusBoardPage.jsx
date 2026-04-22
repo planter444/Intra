@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2, Plane } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
+import { useAuth } from '../context/AuthContext';
 import { fetchLeaveOverview } from '../services/leaveService';
 import { formatDateDisplay, formatDateRangeDisplay } from '../utils/formatters';
 import { countKenyaLeaveDays, formatDateOnly, parseDateOnly } from '../utils/leaveCalendar';
@@ -34,10 +35,31 @@ const shiftDays = (date, days) => {
   return next;
 };
 
+const getInclusiveCalendarDays = (startDate, endDate) => {
+  const start = parseDateOnly(startDate);
+  const end = parseDateOnly(endDate || startDate);
+
+  if (!start || !end || end.getTime() < start.getTime()) {
+    return 0;
+  }
+
+  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+};
+
 const getWorkingDays = (startDate, endDate) => countKenyaLeaveDays(startDate, endDate) || 0;
 
 const maxDate = (left, right) => (left.getTime() >= right.getTime() ? left : right);
 const minDate = (left, right) => (left.getTime() <= right.getTime() ? left : right);
+
+const getCalendarYearBounds = (year) => ({
+  start: new Date(year, 0, 1),
+  end: new Date(year, 11, 31)
+});
+
+const getOffsetPercent = (segmentStartDate, yearStart, totalDays) => {
+  const offsetDays = getInclusiveCalendarDays(formatDateOnly(yearStart), segmentStartDate) - 1;
+  return totalDays ? (offsetDays / totalDays) * 100 : 0;
+};
 
 const buildSegments = (requests, year, joinedAt) => {
   const bounds = getYearBounds(year, joinedAt);
@@ -45,10 +67,11 @@ const buildSegments = (requests, year, joinedAt) => {
     return [];
   }
 
+  const calendarBounds = getCalendarYearBounds(year);
   const timelineStart = bounds.start;
   const timelineEnd = bounds.end;
   const today = formatDateOnly(new Date());
-  const yearDays = getWorkingDays(formatDateOnly(timelineStart), formatDateOnly(timelineEnd));
+  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(calendarBounds.start), formatDateOnly(calendarBounds.end));
   const sorted = [...(requests || [])].sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
   const segments = [];
   let cursor = new Date(timelineStart.getTime());
@@ -117,7 +140,8 @@ const buildSegments = (requests, year, joinedAt) => {
 
   return segments.map((segment) => ({
     ...segment,
-    widthPercent: yearDays ? (segment.days / yearDays) * 100 : 0
+    widthPercent: totalCalendarDays ? (getInclusiveCalendarDays(segment.startDate, segment.endDate) / totalCalendarDays) * 100 : 0,
+    offsetPercent: getOffsetPercent(segment.startDate, calendarBounds.start, totalCalendarDays)
   }));
 };
 
@@ -130,6 +154,7 @@ const getSegmentClassName = (segment) => {
 };
 
 export default function LeaveStatusBoardPage() {
+  const { user } = useAuth();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [employees, setEmployees] = useState([]);
@@ -138,6 +163,7 @@ export default function LeaveStatusBoardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { cardStyle, animationStyle } = usePagePresentation();
+  const detailsSectionRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -224,11 +250,44 @@ export default function LeaveStatusBoardPage() {
     [currentYear]
   );
 
+  const pageSubtitle = useMemo(() => {
+    if (['ceo', 'admin', 'finance'].includes(user?.role)) {
+      return 'See who is currently away, when they return, and how each employee’s year has moved between work and leave.';
+    }
+
+    if (user?.role === 'supervisor') {
+      return 'Review your leave timeline and the leave activity of employees who report to you.';
+    }
+
+    return 'Review your leave timeline, current status, and year activity history.';
+  }, [user?.role]);
+
+  const currentMarkerPercent = useMemo(() => {
+    if (year !== currentYear) {
+      return null;
+    }
+
+    const today = formatDateOnly(new Date());
+    const totalCalendarDays = getInclusiveCalendarDays(`${year}-01-01`, `${year}-12-31`);
+    const offsetDays = getInclusiveCalendarDays(`${year}-01-01`, today) - 1;
+    return totalCalendarDays ? (offsetDays / totalCalendarDays) * 100 : null;
+  }, [currentYear, year]);
+
+  useEffect(() => {
+    if (!selectedEmployee || typeof window === 'undefined' || window.innerWidth >= 1280) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      detailsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [selectedEmployee]);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Leave Status Board"
-        subtitle="See who is currently away, when they return, and how each employee’s year has moved between work and leave."
+        subtitle={pageSubtitle}
         actions={[
           <div key="year" className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
             <label htmlFor="leave-status-year" className="text-sm font-medium text-slate-600">Year</label>
@@ -280,12 +339,12 @@ export default function LeaveStatusBoardPage() {
                     <span className="inline-flex items-center gap-1"><CalendarDays size={14} />{employee.approvedRequests?.length || 0} leave item(s)</span>
                     {employee.currentLeave ? <span className="truncate">{employee.currentLeave.leaveTypeLabel}</span> : <span>Working now</span>}
                   </div>
-                  <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-slate-100">
+                  <div className="relative mt-3 h-3 overflow-hidden rounded-full border border-slate-200 bg-white">
                     {miniSegments.map((segment, index) => (
                       <div
                         key={`${employee.id}-${segment.startDate}-${segment.endDate}-${index}`}
-                        className={segment.type === 'leave' ? 'bg-amber-400' : 'bg-emerald-500'}
-                        style={{ width: `${segment.widthPercent}%` }}
+                        className={`absolute inset-y-0 ${segment.type === 'leave' ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                        style={{ left: `${segment.offsetPercent}%`, width: `${segment.widthPercent}%` }}
                         title={`${segment.label}: ${formatDateRangeDisplay(segment.startDate, segment.endDate)}`}
                       />
                     ))}
@@ -297,7 +356,7 @@ export default function LeaveStatusBoardPage() {
           </div>
         </SectionCard>
 
-        <div className="space-y-6">
+        <div ref={detailsSectionRef} className="space-y-6">
           <SectionCard
             title={selectedEmployee ? selectedEmployee.fullName : 'Employee details'}
             subtitle={selectedEmployee ? `${selectedEmployee.positionTitle || selectedEmployee.roleTitle || 'Employee'} · ${selectedEmployee.departmentName || 'No department'} · ${selectedEmployee.employeeNo || 'No employee number'}` : 'Choose an employee to view their year overview.'}
@@ -326,21 +385,27 @@ export default function LeaveStatusBoardPage() {
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 p-4">
-                  <div className="grid grid-cols-12 gap-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <div className="grid grid-cols-12 gap-1 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-400 sm:gap-2 sm:text-[11px]">
                     {MONTH_LABELS.map((month) => <div key={month}>{month}</div>)}
                   </div>
-                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                    <div className="flex min-h-[52px]">
+                  <div className="relative mt-4">
+                    {currentMarkerPercent !== null ? (
+                      <span className="absolute -top-7 -translate-x-1/2 rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white" style={{ left: `${currentMarkerPercent}%` }}>
+                        Current
+                      </span>
+                    ) : null}
+                    <div className="relative min-h-[52px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
                       {selectedSegments.map((segment, index) => (
                         <div
                           key={`${segment.startDate}-${segment.endDate}-${segment.label}-${index}`}
-                          className={`flex min-w-0 items-center justify-center px-2 text-center text-[11px] font-semibold ${getSegmentClassName(segment)}`}
-                          style={{ width: `${segment.widthPercent}%` }}
+                          className={`absolute inset-y-0 flex min-w-0 items-center justify-center px-1 text-center text-[10px] font-semibold sm:px-2 sm:text-[11px] ${getSegmentClassName(segment)}`}
+                          style={{ left: `${segment.offsetPercent}%`, width: `${segment.widthPercent}%` }}
                           title={`${segment.label}: ${formatDateRangeDisplay(segment.startDate, segment.endDate)}`}
                         >
                           <span className="truncate">{segment.widthPercent >= 9 ? `${segment.label}${segment.isCurrent ? ' • Current' : ''}` : ''}</span>
                         </div>
                       ))}
+                      {currentMarkerPercent !== null ? <div className="absolute inset-y-0 z-10 w-0.5 bg-slate-900/35" style={{ left: `${currentMarkerPercent}%` }} /> : null}
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">

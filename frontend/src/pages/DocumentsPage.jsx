@@ -31,6 +31,20 @@ const parseCustomLabelFromFileName = (fileName = '') => {
   return { category: match[1].trim(), label: match[2].trim() };
 };
 
+const isAddendumDocument = (document) => String(document?.folderType || '').trim().toLowerCase() === 'addendum';
+
+const getDocumentDisplayLabel = (document, folderLabelMap) => {
+  const parsed = ['other', 'addendum'].includes(String(document?.folderType || '').trim().toLowerCase())
+    ? parseCustomLabelFromFileName(document?.fileName)
+    : null;
+
+  if (parsed) {
+    return `${parsed.category} · ${parsed.label}`;
+  }
+
+  return folderLabelMap[document?.folderType] || document?.folderType;
+};
+
 export default function DocumentsPage() {
   const { user, settings } = useAuth();
   const [documents, setDocuments] = useState([]);
@@ -51,6 +65,10 @@ export default function DocumentsPage() {
     [settings?.folders]
   );
   const documentCategories = useMemo(() => settings?.documentCategories || [], [settings?.documentCategories]);
+  const uploadCategories = useMemo(
+    () => documentCategories.filter((category) => canAddDocumentAddendums || String(category?.code || '').trim().toLowerCase() !== 'addendum'),
+    [canAddDocumentAddendums, documentCategories]
+  );
   const folderLabelMap = useMemo(() => {
     const map = new Map();
     (settings?.folders || []).forEach((f) => { if (f?.code) map.set(f.code, f.label || f.code); });
@@ -63,11 +81,11 @@ export default function DocumentsPage() {
   useUnsavedChangesGuard(Boolean(uploadState.file || uploadState.employeeName || uploadState.userId));
 
   useEffect(() => {
-    const defaultCategory = (documentCategories[0]?.code) || '';
+    const defaultCategory = (uploadCategories[0]?.code) || '';
     if (!uploadState.folderCategoryCode) {
-      setUploadState((c) => ({ ...c, folderCategoryCode: defaultCategory, folderLabelCode: (documentCategories[0]?.types?.[0]?.code) || '' }));
+      setUploadState((c) => ({ ...c, folderCategoryCode: defaultCategory, folderLabelCode: (uploadCategories[0]?.types?.[0]?.code) || '' }));
     }
-  }, [documentCategories, uploadState.folderCategoryCode]);
+  }, [uploadCategories, uploadState.folderCategoryCode]);
 
   const employeeMatch = useMemo(
     () => employees.find((employee) => employee.fullName.toLowerCase() === uploadState.employeeName.trim().toLowerCase()),
@@ -139,7 +157,8 @@ export default function DocumentsPage() {
       // Resolve final folderType from selected label or fall back to 'other'
       const selectedCategory = documentCategories.find((c) => c.code === uploadState.folderCategoryCode);
       const selectedType = (selectedCategory?.types || []).find((t) => t.code === uploadState.folderLabelCode);
-      const finalFolderType = selectedType?.code || 'other';
+      const isAddendumSelection = uploadState.folderCategoryCode === 'addendum';
+      const finalFolderType = isAddendumSelection ? 'addendum' : (selectedType?.code || 'other');
 
       if (!canAddDocumentAddendums && (uploadState.folderCategoryCode === '__other' || uploadState.folderLabelCode === '__otherLabel' || finalFolderType === 'other')) {
         setMessageTone('error');
@@ -147,10 +166,17 @@ export default function DocumentsPage() {
         return;
       }
 
+      if (isAddendumSelection && !canAddDocumentAddendums) {
+        setMessageTone('error');
+        setMessage('Only CEO, IT Officer, and Finance Officer can create addendums.');
+        return;
+      }
+
       // If uploading to 'Other', embed the custom labels in the filename for display later
-      const needsCustomTags = finalFolderType === 'other' && (uploadState.customCategoryText || uploadState.customLabelText);
+      const needsCustomTags = (finalFolderType === 'other' && (uploadState.customCategoryText || uploadState.customLabelText))
+        || (finalFolderType === 'addendum' && uploadState.customLabelText);
       const sendFile = needsCustomTags
-        ? new File([uploadState.file], `[${(uploadState.customCategoryText || 'Other').trim()} - ${(uploadState.customLabelText || 'Other').trim()}] ${uploadState.file.name}`.trim(), { type: uploadState.file.type })
+        ? new File([uploadState.file], `[${(finalFolderType === 'addendum' ? 'Addendum' : (uploadState.customCategoryText || 'Other')).trim()} - ${(uploadState.customLabelText || (finalFolderType === 'addendum' ? 'Addendum' : 'Other')).trim()}] ${uploadState.file.name}`.trim(), { type: uploadState.file.type })
         : uploadState.file;
 
       await uploadDocument({
@@ -160,7 +186,16 @@ export default function DocumentsPage() {
       });
       setMessageTone('success');
       setMessage('Document uploaded successfully.');
-      setUploadState((current) => ({ ...current, file: null, employeeName: '', userId: '', folderLabelCode: '', customCategoryText: '', customLabelText: '' }));
+      setUploadState((current) => ({
+        ...current,
+        file: null,
+        employeeName: '',
+        userId: '',
+        folderCategoryCode: (uploadCategories[0]?.code) || current.folderCategoryCode,
+        folderLabelCode: (uploadCategories[0]?.types?.[0]?.code) || '',
+        customCategoryText: '',
+        customLabelText: ''
+      }));
       event.target.reset();
       await loadDocuments();
     } catch (error) {
@@ -411,10 +446,10 @@ export default function DocumentsPage() {
                     setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: '__otherLabel' }));
                     return;
                   }
-                  const firstType = (documentCategories.find((c) => c.code === nextCode)?.types || [])[0]?.code || '';
-                  setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: firstType }));
+                  const firstType = (uploadCategories.find((c) => c.code === nextCode)?.types || [])[0]?.code || '';
+                  setUploadState((c) => ({ ...c, folderCategoryCode: nextCode, folderLabelCode: firstType, customCategoryText: nextCode === 'addendum' ? 'Addendum' : '', customLabelText: '' }));
                 }}>
-                  {documentCategories.map((cat) => (
+                  {uploadCategories.map((cat) => (
                     <option key={cat.code} value={cat.code}>{cat.label}</option>
                   ))}
                   {canAddDocumentAddendums ? <option value="__other">Other…</option> : null}
@@ -425,17 +460,21 @@ export default function DocumentsPage() {
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Label</label>
-                <select value={uploadState.folderLabelCode} onChange={(e) => {
-                  if (e.target.value === '__otherLabel' && !canAddDocumentAddendums) {
-                    return;
-                  }
-                  setUploadState((c) => ({ ...c, folderLabelCode: e.target.value }));
-                }}>
-                  {(documentCategories.find((c) => c.code === uploadState.folderCategoryCode)?.types || []).map((t) => (
-                    <option key={t.code} value={t.code}>{t.label}</option>
-                  ))}
-                  {canAddDocumentAddendums ? <option value="__otherLabel">Other…</option> : null}
-                </select>
+                {uploadState.folderCategoryCode === 'addendum' ? (
+                  <input placeholder="Enter addendum label" value={uploadState.customLabelText} onChange={(e) => setUploadState((c) => ({ ...c, folderLabelCode: 'addendum', customLabelText: e.target.value }))} />
+                ) : (
+                  <select value={uploadState.folderLabelCode} onChange={(e) => {
+                    if (e.target.value === '__otherLabel' && !canAddDocumentAddendums) {
+                      return;
+                    }
+                    setUploadState((c) => ({ ...c, folderLabelCode: e.target.value }));
+                  }}>
+                    {(uploadCategories.find((c) => c.code === uploadState.folderCategoryCode)?.types || []).map((t) => (
+                      <option key={t.code} value={t.code}>{t.label}</option>
+                    ))}
+                    {canAddDocumentAddendums ? <option value="__otherLabel">Other…</option> : null}
+                  </select>
+                )}
                 {uploadState.folderLabelCode === '__otherLabel' ? (
                   <input className="mt-2" placeholder="Enter label" value={uploadState.customLabelText} onChange={(e) => setUploadState((c) => ({ ...c, customLabelText: e.target.value }))} />
                 ) : null}
@@ -502,8 +541,8 @@ export default function DocumentsPage() {
                     key: 'fileName',
                     header: 'Document type',
                     render: (row) => (
-                      <div className={row.isNew ? 'rounded-2xl bg-amber-50 px-3 py-2' : ''}>
-                        <p className="font-medium text-slate-900">{(() => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); })()}</p>
+                      <div className={row.isNew ? `rounded-2xl px-3 py-2 ${isAddendumDocument(row) ? 'bg-rose-50' : 'bg-amber-50'}` : isAddendumDocument(row) ? 'rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2' : ''}>
+                        <p className={`font-medium ${isAddendumDocument(row) ? 'text-rose-700' : 'text-slate-900'}`}>{getDocumentDisplayLabel(row, folderLabelMap)}</p>
                         <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{row.fileName}</p>
                       </div>
                     )
@@ -543,7 +582,7 @@ export default function DocumentsPage() {
                 rows={canManageEmployeeDocuments ? selectedFolderDocuments : visibleDocuments}
                 getRowProps={(row) => ({
                   onClick: () => handleOpenDocument(row.id),
-                  className: 'cursor-pointer transition hover:bg-slate-50'
+                  className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}`
                 })}
                 emptyLabel={canManageEmployeeDocuments ? 'No documents were found in this folder.' : 'No documents found.'}
               />
@@ -553,14 +592,14 @@ export default function DocumentsPage() {
                     const cat = documentCategories.find((c) => c.code === catCode);
                     if (!docs.length) return null;
                     return (
-                      <div key={catCode} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
+                      <div key={catCode} className={`rounded-3xl bg-white p-4 shadow-soft ${catCode === 'addendum' ? 'border border-rose-200' : 'border border-slate-200'}`}>
                         <div className="mb-3 flex items-center justify-between">
-                          <h4 className="text-base font-semibold text-slate-900">{cat ? cat.label : 'Other Documents'}</h4>
+                          <h4 className={`text-base font-semibold ${catCode === 'addendum' ? 'text-rose-700' : 'text-slate-900'}`}>{cat ? cat.label : 'Other Documents'}</h4>
                           <span className="text-xs text-slate-500">{docs.length} item(s)</span>
                         </div>
                         <DataTable
                           columns={[
-                            { key: 'type', header: 'Type', render: (row) => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); } },
+                            { key: 'type', header: 'Type', render: (row) => <span className={isAddendumDocument(row) ? 'font-medium text-rose-700' : ''}>{getDocumentDisplayLabel(row, folderLabelMap)}</span> },
                             { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
                             { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() },
                             { key: 'actions', header: 'Actions', render: (row) => (
@@ -571,7 +610,7 @@ export default function DocumentsPage() {
                             ) }
                           ]}
                           rows={docs}
-                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: 'cursor-pointer transition hover:bg-slate-50' })}
+                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
                           emptyLabel="No documents in this category."
                         />
                       </div>
@@ -584,19 +623,19 @@ export default function DocumentsPage() {
                     const cat = documentCategories.find((c) => c.code === catCode);
                     if (!docs.length) return null;
                     return (
-                      <div key={catCode} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
+                      <div key={catCode} className={`rounded-3xl bg-white p-4 shadow-soft ${catCode === 'addendum' ? 'border border-rose-200' : 'border border-slate-200'}`}>
                         <div className="mb-3 flex items-center justify-between">
-                          <h4 className="text-base font-semibold text-slate-900">{cat ? cat.label : 'Other Documents'}</h4>
+                          <h4 className={`text-base font-semibold ${catCode === 'addendum' ? 'text-rose-700' : 'text-slate-900'}`}>{cat ? cat.label : 'Other Documents'}</h4>
                           <span className="text-xs text-slate-500">{docs.length} item(s)</span>
                         </div>
                         <DataTable
                           columns={[
-                            { key: 'type', header: 'Type', render: (row) => { const parsed = row.folderType === 'other' ? parseCustomLabelFromFileName(row.fileName) : null; return parsed ? `${parsed.category} · ${parsed.label}` : (folderLabelMap[row.folderType] || row.folderType); } },
+                            { key: 'type', header: 'Type', render: (row) => <span className={isAddendumDocument(row) ? 'font-medium text-rose-700' : ''}>{getDocumentDisplayLabel(row, folderLabelMap)}</span> },
                             { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
                             { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() }
                           ]}
                           rows={docs}
-                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: 'cursor-pointer transition hover:bg-slate-50' })}
+                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
                           emptyLabel="No documents in this category."
                         />
                       </div>
