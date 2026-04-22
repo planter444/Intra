@@ -54,7 +54,7 @@ const defaultNavigationByRole = {
   hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
   admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit'],
   ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'kpi', 'performance'],
-  finance: ['dashboard', 'leave_status', 'documents', 'kpi', 'performance', 'settings']
+  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings']
 };
 
 export default function AppLayout({ children }) {

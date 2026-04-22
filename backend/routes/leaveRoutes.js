@@ -25,9 +25,9 @@ router.get('/requests', listRequests);
 router.get('/overview', authorize('employee', 'supervisor', 'admin', 'ceo', 'finance'), getLeaveOverview);
 router.get('/requests/:id', getRequest);
 router.get('/requests/:id/supporting-document', downloadSupportingDocument);
-router.post('/requests', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), createRequest);
-router.put('/requests/:id', authorize('employee', 'supervisor', 'admin'), upload.single('supportingDocument'), updateRequest);
-router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin'), cancelRequest);
+router.post('/requests', authorize('employee', 'supervisor', 'admin', 'finance'), upload.single('supportingDocument'), createRequest);
+router.put('/requests/:id', authorize('employee', 'supervisor', 'admin', 'finance'), upload.single('supportingDocument'), updateRequest);
+router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin', 'finance'), cancelRequest);
 router.patch('/requests/:id/decision', authorize('employee', 'supervisor', 'admin', 'ceo'), decideRequest);
 router.delete('/requests/:id', authorize('admin', 'ceo'), deleteRequestPermanently);
 

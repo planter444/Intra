@@ -125,6 +125,8 @@ export default function LeaveRequestDetailPage() {
     || request?.status === 'pending_supervisor'
     || request?.supervisorApproverId
   );
+  const isCeoSupervisor = request?.supervisorApproverRole === 'ceo';
+  const visibleSupervisorStage = hasSupervisorStage && !isCeoSupervisor;
 
   const requestedDays = useMemo(
     () => calculateRequestedDays(form.startDate, form.endDate),
@@ -163,9 +165,15 @@ export default function LeaveRequestDetailPage() {
   const canFinalCeoReview = request && !isRequestOwner && user?.role === 'ceo' && request.status === 'pending_ceo';
   const canReviseCeoDecision = request && !isRequestOwner && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
   const timeline = request?.timeline || {
-    submitted: { label: 'Submitted', time: request?.createdAt, actorName: request?.employeeName },
-    supervisor: hasSupervisorStage ? { label: 'Supervisor Review', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
-    ceo: { label: 'CEO Review', time: null, actorName: request?.ceoApproverName || request?.hrApproverName, comment: request?.ceoComment || request?.hrComment, decision: null }
+    submitted: { label: 'Applied', time: request?.createdAt, actorName: request?.employeeName },
+    supervisor: visibleSupervisorStage ? { label: 'Supervisor', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
+    ceo: {
+      label: 'CEO',
+      time: request?.ceoTime || request?.supervisorTime || null,
+      actorName: isCeoSupervisor ? (request?.ceoApproverName || request?.supervisorApproverName || request?.hrApproverName) : (request?.ceoApproverName || request?.hrApproverName),
+      comment: isCeoSupervisor ? (request?.ceoComment || request?.supervisorComment || request?.hrComment) : (request?.ceoComment || request?.hrComment),
+      decision: null
+    }
   };
   const hasUnsavedChanges = useMemo(
     () => editing && (

@@ -63,10 +63,10 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DashboardPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><ProfilePage /></ProtectedRoute>} />
       <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
-      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeavesPage /></ProtectedRoute>} />
+      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeavesPage /></ProtectedRoute>} />
       <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveStatusBoardPage /></ProtectedRoute>} />
-      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin']}><LeaveApplyPage /></ProtectedRoute>} />
-      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
+      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'finance']}><LeaveApplyPage /></ProtectedRoute>} />
+      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveRequestDetailPage /></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DocumentsPage /></ProtectedRoute>} />
       <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><KPIMatrixPage /></ProtectedRoute>} />
       <Route path="/kpi-matrix/:employeeId" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><KPIMatrixEmployeePage /></ProtectedRoute>} />

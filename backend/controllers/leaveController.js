@@ -11,28 +11,40 @@ const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
   const supervisorEvent = auditTrail.find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT'].includes(entry.action));
   const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'admin'].includes(entry.actorRole));
+  const isCeoSupervisor = request.supervisorApproverRole === 'ceo';
   const hasSupervisorStage = Boolean(
     request.requiresSupervisorReview
     || supervisorEvent
     || request.status === 'pending_supervisor'
     || request.supervisorApproverId
-  );
+  ) && !isCeoSupervisor;
+
+  const effectiveCeoEvent = isCeoSupervisor && !ceoEvent ? supervisorEvent : ceoEvent;
+  const effectiveCeoActorName = isCeoSupervisor
+    ? request.ceoApproverName || request.supervisorApproverName || effectiveCeoEvent?.actorName || null
+    : request.ceoApproverName || request.hrApproverName || effectiveCeoEvent?.actorName || null;
+  const effectiveCeoComment = isCeoSupervisor
+    ? request.ceoComment || request.supervisorComment || request.hrComment || ''
+    : request.ceoComment || request.hrComment || '';
+  const effectiveCeoDecision = isCeoSupervisor && !ceoEvent
+    ? (supervisorEvent?.action?.includes('APPROVE') ? 'approved' : supervisorEvent?.action?.includes('REJECT') ? 'rejected' : null)
+    : (request.status === 'approved' ? 'approved' : request.status === 'rejected' ? 'rejected' : null);
 
   return {
-    submitted: submittedEvent ? { label: 'Submitted', time: submittedEvent.createdAt, actorName: submittedEvent.actorName } : { label: 'Submitted', time: request.createdAt, actorName: request.employeeName },
+    submitted: submittedEvent ? { label: 'Applied', time: submittedEvent.createdAt, actorName: submittedEvent.actorName } : { label: 'Applied', time: request.createdAt, actorName: request.employeeName },
     supervisor: hasSupervisorStage ? {
-      label: 'Supervisor Review',
+      label: 'Supervisor',
       time: supervisorEvent?.createdAt || null,
       actorName: request.supervisorApproverName || supervisorEvent?.actorName || null,
       comment: request.supervisorComment || '',
       decision: supervisorEvent?.action?.includes('APPROVE') ? 'approved' : supervisorEvent?.action?.includes('REJECT') ? 'rejected' : null
     } : null,
     ceo: {
-      label: 'CEO Review',
-      time: ceoEvent?.createdAt || null,
-      actorName: request.ceoApproverName || request.hrApproverName || ceoEvent?.actorName || null,
-      comment: request.ceoComment || request.hrComment || '',
-      decision: request.status === 'approved' ? 'approved' : request.status === 'rejected' ? 'rejected' : null
+      label: 'CEO',
+      time: effectiveCeoEvent?.createdAt || null,
+      actorName: effectiveCeoActorName,
+      comment: effectiveCeoComment,
+      decision: effectiveCeoDecision
     }
   };
 };
