@@ -15,7 +15,9 @@ import SettingsPage from './pages/SettingsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import KPIMatrixPage from './pages/KPIMatrixPage';
+import KPIMatrixEmployeePage from './pages/KPIMatrixEmployeePage';
 import PerformanceDashboard from './pages/PerformanceDashboard';
+import PerformanceEmployeePage from './pages/PerformanceEmployeePage';
 import LeaveStatusBoardPage from './pages/LeaveStatusBoardPage';
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -67,7 +69,9 @@ export default function App() {
       <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo']}><LeaveRequestDetailPage /></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DocumentsPage /></ProtectedRoute>} />
       <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><KPIMatrixPage /></ProtectedRoute>} />
+      <Route path="/kpi-matrix/:employeeId" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><KPIMatrixEmployeePage /></ProtectedRoute>} />
       <Route path="/performance-dashboard" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><PerformanceDashboard /></ProtectedRoute>} />
+      <Route path="/performance-dashboard/:employeeId" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><PerformanceEmployeePage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><SettingsPage /></ProtectedRoute>} />
       <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AuditLogsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />

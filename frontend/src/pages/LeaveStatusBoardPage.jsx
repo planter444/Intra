@@ -51,14 +51,34 @@ const getWorkingDays = (startDate, endDate) => countKenyaLeaveDays(startDate, en
 const maxDate = (left, right) => (left.getTime() >= right.getTime() ? left : right);
 const minDate = (left, right) => (left.getTime() <= right.getTime() ? left : right);
 
-const getCalendarYearBounds = (year) => ({
-  start: new Date(year, 0, 1),
-  end: new Date(year, 11, 31)
-});
-
-const getOffsetPercent = (segmentStartDate, yearStart, totalDays) => {
-  const offsetDays = getInclusiveCalendarDays(formatDateOnly(yearStart), segmentStartDate) - 1;
+const getOffsetPercent = (segmentStartDate, timelineStartDate, totalDays) => {
+  const offsetDays = getInclusiveCalendarDays(formatDateOnly(timelineStartDate), segmentStartDate) - 1;
   return totalDays ? (offsetDays / totalDays) * 100 : 0;
+};
+
+const buildMonthSegments = (year, joinedAt) => {
+  const bounds = getYearBounds(year, joinedAt);
+  if (!bounds) {
+    return [];
+  }
+
+  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(bounds.start), formatDateOnly(bounds.end));
+
+  return Array.from({ length: 12 }, (_, monthIndex) => {
+    const monthStart = new Date(year, monthIndex, 1);
+    const monthEnd = new Date(year, monthIndex + 1, 0);
+    const visibleStart = maxDate(monthStart, bounds.start);
+    const visibleEnd = minDate(monthEnd, bounds.end);
+
+    if (visibleStart.getTime() > visibleEnd.getTime()) {
+      return null;
+    }
+
+    return {
+      label: MONTH_LABELS[monthIndex],
+      widthPercent: totalCalendarDays ? (getInclusiveCalendarDays(formatDateOnly(visibleStart), formatDateOnly(visibleEnd)) / totalCalendarDays) * 100 : 0
+    };
+  }).filter(Boolean);
 };
 
 const buildSegments = (requests, year, joinedAt) => {
@@ -67,11 +87,10 @@ const buildSegments = (requests, year, joinedAt) => {
     return [];
   }
 
-  const calendarBounds = getCalendarYearBounds(year);
   const timelineStart = bounds.start;
   const timelineEnd = bounds.end;
   const today = formatDateOnly(new Date());
-  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(calendarBounds.start), formatDateOnly(calendarBounds.end));
+  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(timelineStart), formatDateOnly(timelineEnd));
   const sorted = [...(requests || [])].sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
   const segments = [];
   let cursor = new Date(timelineStart.getTime());
@@ -141,7 +160,7 @@ const buildSegments = (requests, year, joinedAt) => {
   return segments.map((segment) => ({
     ...segment,
     widthPercent: totalCalendarDays ? (getInclusiveCalendarDays(segment.startDate, segment.endDate) / totalCalendarDays) * 100 : 0,
-    offsetPercent: getOffsetPercent(segment.startDate, calendarBounds.start, totalCalendarDays)
+    offsetPercent: getOffsetPercent(segment.startDate, timelineStart, totalCalendarDays)
   }));
 };
 
@@ -225,6 +244,14 @@ export default function LeaveStatusBoardPage() {
     () => (selectedEmployee ? buildSegments(selectedEmployee.approvedRequests || [], year, selectedEmployee.joinedAt) : []),
     [selectedEmployee, year]
   );
+  const selectedTimelineBounds = useMemo(
+    () => (selectedEmployee ? getYearBounds(year, selectedEmployee.joinedAt) : null),
+    [selectedEmployee, year]
+  );
+  const selectedMonthSegments = useMemo(
+    () => (selectedEmployee ? buildMonthSegments(year, selectedEmployee.joinedAt) : []),
+    [selectedEmployee, year]
+  );
 
   const summary = useMemo(() => {
     const atLeave = employees.filter((employee) => employee.currentStatus === 'At Leave').length;
@@ -263,15 +290,19 @@ export default function LeaveStatusBoardPage() {
   }, [user?.role]);
 
   const currentMarkerPercent = useMemo(() => {
-    if (year !== currentYear) {
+    if (year !== currentYear || !selectedTimelineBounds) {
       return null;
     }
 
     const today = formatDateOnly(new Date());
-    const totalCalendarDays = getInclusiveCalendarDays(`${year}-01-01`, `${year}-12-31`);
-    const offsetDays = getInclusiveCalendarDays(`${year}-01-01`, today) - 1;
+    const todayDate = parseDateOnly(today);
+    if (!todayDate || todayDate.getTime() < selectedTimelineBounds.start.getTime() || todayDate.getTime() > selectedTimelineBounds.end.getTime()) {
+      return null;
+    }
+    const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(selectedTimelineBounds.start), formatDateOnly(selectedTimelineBounds.end));
+    const offsetDays = getInclusiveCalendarDays(formatDateOnly(selectedTimelineBounds.start), today) - 1;
     return totalCalendarDays ? (offsetDays / totalCalendarDays) * 100 : null;
-  }, [currentYear, year]);
+  }, [currentYear, selectedTimelineBounds, year]);
 
   useEffect(() => {
     if (!selectedEmployee || typeof window === 'undefined' || window.innerWidth >= 1280) {
@@ -385,15 +416,10 @@ export default function LeaveStatusBoardPage() {
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 p-4">
-                  <div className="grid grid-cols-12 gap-1 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-400 sm:gap-2 sm:text-[11px]">
-                    {MONTH_LABELS.map((month) => <div key={month}>{month}</div>)}
+                  <div className="flex overflow-hidden rounded-xl bg-slate-50 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-400 sm:text-[11px]">
+                    {selectedMonthSegments.map((month) => <div key={month.label} style={{ width: `${month.widthPercent}%` }} className="truncate px-1 py-2">{month.label}</div>)}
                   </div>
                   <div className="relative mt-4">
-                    {currentMarkerPercent !== null ? (
-                      <span className="absolute -top-7 -translate-x-1/2 rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white" style={{ left: `${currentMarkerPercent}%` }}>
-                        Current
-                      </span>
-                    ) : null}
                     <div className="relative min-h-[52px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
                       {selectedSegments.map((segment, index) => (
                         <div
@@ -402,7 +428,7 @@ export default function LeaveStatusBoardPage() {
                           style={{ left: `${segment.offsetPercent}%`, width: `${segment.widthPercent}%` }}
                           title={`${segment.label}: ${formatDateRangeDisplay(segment.startDate, segment.endDate)}`}
                         >
-                          <span className="truncate">{segment.widthPercent >= 9 ? `${segment.label}${segment.isCurrent ? ' • Current' : ''}` : ''}</span>
+                          <span className="truncate">{segment.widthPercent >= 9 ? segment.label : ''}</span>
                         </div>
                       ))}
                       {currentMarkerPercent !== null ? <div className="absolute inset-y-0 z-10 w-0.5 bg-slate-900/35" style={{ left: `${currentMarkerPercent}%` }} /> : null}
@@ -427,7 +453,6 @@ export default function LeaveStatusBoardPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold text-slate-900">{segment.label}</p>
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{segment.days} day(s)</span>
-                        {segment.isCurrent ? <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</span> : null}
                       </div>
                       <p className="mt-1 text-sm text-slate-600">{formatDateRangeDisplay(segment.startDate, segment.endDate)}</p>
                     </div>

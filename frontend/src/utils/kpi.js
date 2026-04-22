@@ -13,13 +13,32 @@ const normalizeScore = (value) => {
   return Math.max(0, Math.min(100, nextValue));
 };
 
-export const getEmptyKpiEntry = () => ({
-  coreRoles: Array.from({ length: KPI_COUNT }, () => ''),
-  indicators: Array.from({ length: KPI_COUNT }, () => ({ label: '', score: '' }))
+export const getEmptyKpiEntry = ({ coreRoleCount = KPI_COUNT, indicatorCount = KPI_COUNT } = {}) => ({
+  coreRoles: Array.from({ length: Math.max(KPI_COUNT, Number(coreRoleCount) || 0) }, () => ''),
+  indicators: Array.from({ length: Math.max(KPI_COUNT, Number(indicatorCount) || 0) }, () => ({ label: '', score: '' }))
 });
 
-export const getNormalizedKpiEntry = (entry = {}) => {
-  const base = getEmptyKpiEntry();
+export const getNormalizedKpiEntry = (entry = {}, options = {}) => {
+  const legacyIndicatorCount = Object.keys(entry || {}).reduce((highest, key) => {
+    const match = /^k(\d+)$/.exec(String(key || ''));
+    if (!match) {
+      return highest;
+    }
+
+    return Math.max(highest, Number(match[1]) || 0);
+  }, 0);
+  const coreRoleCount = Math.max(
+    KPI_COUNT,
+    Array.isArray(entry?.coreRoles) ? entry.coreRoles.length : 0,
+    Number(options?.coreRoleCount) || 0
+  );
+  const indicatorCount = Math.max(
+    KPI_COUNT,
+    Array.isArray(entry?.indicators) ? entry.indicators.length : 0,
+    Number(options?.indicatorCount) || 0,
+    legacyIndicatorCount
+  );
+  const base = getEmptyKpiEntry({ coreRoleCount, indicatorCount });
   const normalizedIndicators = base.indicators.map((indicator, index) => {
     const rawIndicator = Array.isArray(entry?.indicators) ? entry.indicators[index] : null;
     const legacyScore = entry?.[`k${index + 1}`];

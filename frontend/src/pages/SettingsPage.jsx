@@ -11,7 +11,7 @@ import { restoreSettings, updateSettings } from '../services/settingsService';
 import { uploadDocument } from '../services/documentService';
 import { fetchLeaveRequests, deleteLeaveRequest } from '../services/leaveService';
 import { fetchUsers } from '../services/userService';
-import { KPI_COUNT, getAverageKpiScore, getNormalizedKpiEntry, serializeKpiEntry } from '../utils/kpi';
+import { getAverageKpiScore, getNormalizedKpiEntry, serializeKpiEntry } from '../utils/kpi';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
@@ -58,6 +58,7 @@ function SettingsInput({ label, value, onChange, colorPicker = false }) {
 export default function SettingsPage() {
   const { settings, replaceSettings, user } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = user?.role === 'admin';
   const isCeoOnly = user?.role === 'ceo';
   const isFinanceOnly = user?.role === 'finance';
   const availablePages = isCeoOnly
@@ -67,14 +68,12 @@ export default function SettingsPage() {
         ['leave', 'Leave Page'],
         ['kpi', 'KPI Matrix Page'],
         ['performance', 'Performance Dashboard'],
-        ['backgrounds', 'Backgrounds'],
         ['leaves_cleanup', 'Delete Leave Requests']
       ]
     : isFinanceOnly
       ? [
           ['kpi', 'KPI Matrix Page'],
           ['performance', 'Performance Dashboard'],
-          ['backgrounds', 'Backgrounds'],
           ['documents', 'Documents Page']
         ]
       : [
@@ -243,6 +242,34 @@ export default function SettingsPage() {
     }));
   };
 
+  const addSelectedKpiCoreRole = () => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      coreRoles: [...current.coreRoles, '']
+    }));
+  };
+
+  const removeSelectedKpiCoreRole = (index) => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      coreRoles: current.coreRoles.length > 5 ? current.coreRoles.filter((_, roleIndex) => roleIndex !== index) : current.coreRoles
+    }));
+  };
+
+  const addSelectedKpiIndicator = () => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      indicators: [...current.indicators, { label: '', score: '' }]
+    }));
+  };
+
+  const removeSelectedKpiIndicator = (index) => {
+    setSelectedEmployeeKpiEntry((current) => ({
+      ...current,
+      indicators: current.indicators.length > 5 ? current.indicators.filter((_, indicatorIndex) => indicatorIndex !== index) : current.indicators
+    }));
+  };
+
   const handleUploadPerPageBackground = async (variant, pageKey, file, device = 'desktop') => {
     if (!file) return;
     try {
@@ -336,7 +363,7 @@ export default function SettingsPage() {
     [activePage, draft.interface?.pageExperience]
   );
 
-  const canEditPagePresentation = (!isCeoOnly && PAGE_PRESENTATION_KEYS.includes(activePage)) || (isCeoOnly && ['kpi','performance'].includes(activePage));
+  const canEditPagePresentation = isAdmin && PAGE_PRESENTATION_KEYS.includes(activePage);
 
   const handleFaviconUpload = (event) => {
     const file = event.target.files?.[0];
@@ -743,7 +770,7 @@ export default function SettingsPage() {
       return accumulator;
     }, {});
     const normalizedKpiMatrix = Object.entries(normalizedKpiRecords).reduce((accumulator, [employeeId, entry]) => {
-      accumulator[employeeId] = Array.from({ length: KPI_COUNT }, (_, index) => ({
+      accumulator[employeeId] = Array.from({ length: entry.indicators.length }, (_, index) => ({
         [`k${index + 1}`]: entry.indicators[index]?.score ?? ''
       })).reduce((scores, item) => ({ ...scores, ...item }), {});
       return accumulator;
@@ -989,7 +1016,7 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
-      {activePage === 'backgrounds' ? (
+      {isAdmin && activePage === 'backgrounds' ? (
         <div className="space-y-6">
           <SectionCard title="Global background options" subtitle="Control general behavior that applies to both Original and Redesigned UIs.">
             <div className="grid gap-4 md:grid-cols-2">
@@ -1545,24 +1572,30 @@ export default function SettingsPage() {
 
                   <div className="rounded-3xl border border-slate-200 bg-white p-5">
                     <h3 className="text-base font-semibold text-slate-900">Core roles</h3>
-                    <p className="mt-1 text-sm text-slate-500">Add up to five responsibility lines that describe this employee’s main roles.</p>
+                    <p className="mt-1 text-sm text-slate-500">Add the employee’s responsibilities here. You can append more role fields whenever needed.</p>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      {Array.from({ length: KPI_COUNT }, (_, index) => (
+                      {selectedKpiEntry.coreRoles.map((role, index) => (
                         <div key={`core-role-${index}`}>
                           <label className="mb-2 block text-sm font-medium text-slate-700">Core role {index + 1}</label>
-                          <input value={selectedKpiEntry.coreRoles[index] || ''} onChange={(event) => updateSelectedKpiCoreRole(index, event.target.value)} placeholder="Enter core role" />
+                          <div className="flex gap-3">
+                            <input value={role || ''} onChange={(event) => updateSelectedKpiCoreRole(index, event.target.value)} placeholder="Enter core role" />
+                            {selectedKpiEntry.coreRoles.length > 5 ? <button type="button" onClick={() => removeSelectedKpiCoreRole(index)} className="shrink-0 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">Remove</button> : null}
+                          </div>
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-4">
+                      <button type="button" onClick={addSelectedKpiCoreRole} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Add core role</button>
                     </div>
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-white p-5">
-                    <h3 className="text-base font-semibold text-slate-900">Five KPIs</h3>
-                    <p className="mt-1 text-sm text-slate-500">Set the KPI wording and the employee’s current score for each item.</p>
+                    <h3 className="text-base font-semibold text-slate-900">KPIs</h3>
+                    <p className="mt-1 text-sm text-slate-500">Set the KPI wording and the employee’s current score for each item, then add more KPI rows when needed.</p>
                     <div className="mt-4 space-y-4">
                       {selectedKpiEntry.indicators.map((indicator, index) => (
                         <div key={`indicator-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),140px]">
+                          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),140px,auto]">
                             <div>
                               <label className="mb-2 block text-sm font-medium text-slate-700">KPI {index + 1} wording</label>
                               <input value={indicator.label || ''} onChange={(event) => updateSelectedKpiIndicator(index, 'label', event.target.value)} placeholder="Enter KPI wording" />
@@ -1571,9 +1604,15 @@ export default function SettingsPage() {
                               <label className="mb-2 block text-sm font-medium text-slate-700">Score</label>
                               <input type="number" min="0" max="100" value={indicator.score ?? ''} onChange={(event) => updateSelectedKpiIndicator(index, 'score', event.target.value)} placeholder="0-100" />
                             </div>
+                            <div className="flex items-end">
+                              {selectedKpiEntry.indicators.length > 5 ? <button type="button" onClick={() => removeSelectedKpiIndicator(index)} className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">Remove</button> : null}
+                            </div>
                           </div>
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-4">
+                      <button type="button" onClick={addSelectedKpiIndicator} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Add KPI</button>
                     </div>
                   </div>
                 </div>

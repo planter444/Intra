@@ -85,7 +85,8 @@ export default function AppLayout({ children }) {
   const navigation = useMemo(() => {
     const fallbackItems = defaultNavigationByRole[user?.role] || ['dashboard'];
     const configuredItems = settings?.navigation?.[user?.role] || [];
-    const navItems = [...new Set([...fallbackItems, ...configuredItems])];
+    const restrictedItems = user?.role === 'admin' ? [] : ['audit'];
+    const navItems = [...new Set([...fallbackItems, ...configuredItems])].filter((key) => !restrictedItems.includes(key));
     return navItems.map((key) => ({
       key,
       label: user?.role === 'supervisor' && key === 'employees'
