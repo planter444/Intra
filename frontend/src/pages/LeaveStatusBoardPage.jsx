@@ -29,6 +29,24 @@ const getYearBounds = (year, joinedAt) => {
   return { start, end };
 };
 
+const getDisplayBounds = (year, joinedAt) => {
+  const bounds = getYearBounds(year, joinedAt);
+  if (!bounds) {
+    return null;
+  }
+
+  const today = new Date();
+  if (year !== today.getFullYear()) {
+    return bounds;
+  }
+
+  const endOfCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return {
+    start: bounds.start,
+    end: endOfCurrentMonth.getTime() > bounds.end.getTime() ? endOfCurrentMonth : bounds.end
+  };
+};
+
 const shiftDays = (date, days) => {
   const next = new Date(date.getTime());
   next.setDate(next.getDate() + days);
@@ -56,19 +74,18 @@ const getOffsetPercent = (segmentStartDate, timelineStartDate, totalDays) => {
   return totalDays ? (offsetDays / totalDays) * 100 : 0;
 };
 
-const buildMonthSegments = (year, joinedAt) => {
-  const bounds = getYearBounds(year, joinedAt);
-  if (!bounds) {
+const buildMonthSegments = (year, displayBounds) => {
+  if (!displayBounds) {
     return [];
   }
 
-  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(bounds.start), formatDateOnly(bounds.end));
+  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(displayBounds.start), formatDateOnly(displayBounds.end));
 
   return Array.from({ length: 12 }, (_, monthIndex) => {
     const monthStart = new Date(year, monthIndex, 1);
     const monthEnd = new Date(year, monthIndex + 1, 0);
-    const visibleStart = maxDate(monthStart, bounds.start);
-    const visibleEnd = minDate(monthEnd, bounds.end);
+    const visibleStart = maxDate(monthStart, displayBounds.start);
+    const visibleEnd = minDate(monthEnd, displayBounds.end);
 
     if (visibleStart.getTime() > visibleEnd.getTime()) {
       return null;
@@ -81,16 +98,16 @@ const buildMonthSegments = (year, joinedAt) => {
   }).filter(Boolean);
 };
 
-const buildSegments = (requests, year, joinedAt) => {
-  const bounds = getYearBounds(year, joinedAt);
-  if (!bounds) {
+const buildSegments = (requests, year, joinedAt, displayBounds) => {
+  const dataBounds = getYearBounds(year, joinedAt);
+  if (!dataBounds || !displayBounds) {
     return [];
   }
 
-  const timelineStart = bounds.start;
-  const timelineEnd = bounds.end;
+  const timelineStart = dataBounds.start;
+  const timelineEnd = dataBounds.end;
   const today = formatDateOnly(new Date());
-  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(timelineStart), formatDateOnly(timelineEnd));
+  const totalCalendarDays = getInclusiveCalendarDays(formatDateOnly(displayBounds.start), formatDateOnly(displayBounds.end));
   const sorted = [...(requests || [])].sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
   const segments = [];
   let cursor = new Date(timelineStart.getTime());
@@ -160,7 +177,7 @@ const buildSegments = (requests, year, joinedAt) => {
   return segments.map((segment) => ({
     ...segment,
     widthPercent: totalCalendarDays ? (getInclusiveCalendarDays(segment.startDate, segment.endDate) / totalCalendarDays) * 100 : 0,
-    offsetPercent: getOffsetPercent(segment.startDate, timelineStart, totalCalendarDays)
+    offsetPercent: getOffsetPercent(segment.startDate, displayBounds.start, totalCalendarDays)
   }));
 };
 
@@ -174,6 +191,7 @@ const getSegmentClassName = (segment) => {
 
 export default function LeaveStatusBoardPage() {
   const { user } = useAuth();
+  const canViewJoinedCompany = ['admin', 'ceo', 'finance'].includes(user?.role);
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [employees, setEmployees] = useState([]);
@@ -240,17 +258,17 @@ export default function LeaveStatusBoardPage() {
     return source.find((employee) => String(employee.id) === String(selectedEmployeeId)) || source[0] || null;
   }, [employees, filteredEmployees, selectedEmployeeId]);
 
-  const selectedSegments = useMemo(
-    () => (selectedEmployee ? buildSegments(selectedEmployee.approvedRequests || [], year, selectedEmployee.joinedAt) : []),
+  const selectedTimelineBounds = useMemo(
+    () => (selectedEmployee ? getDisplayBounds(year, selectedEmployee.joinedAt) : null),
     [selectedEmployee, year]
   );
-  const selectedTimelineBounds = useMemo(
-    () => (selectedEmployee ? getYearBounds(year, selectedEmployee.joinedAt) : null),
-    [selectedEmployee, year]
+  const selectedSegments = useMemo(
+    () => (selectedEmployee ? buildSegments(selectedEmployee.approvedRequests || [], year, selectedEmployee.joinedAt, selectedTimelineBounds) : []),
+    [selectedEmployee, selectedTimelineBounds, year]
   );
   const selectedMonthSegments = useMemo(
-    () => (selectedEmployee ? buildMonthSegments(year, selectedEmployee.joinedAt) : []),
-    [selectedEmployee, year]
+    () => buildMonthSegments(year, selectedTimelineBounds),
+    [selectedTimelineBounds, year]
   );
 
   const summary = useMemo(() => {
@@ -349,7 +367,8 @@ export default function LeaveStatusBoardPage() {
             {!loading && !filteredEmployees.length ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">No employees matched your search.</div> : null}
             {!loading ? filteredEmployees.map((employee) => {
               const isSelected = String(employee.id) === String(selectedEmployee?.id);
-              const miniSegments = buildSegments(employee.approvedRequests || [], year, employee.joinedAt);
+              const miniTimelineBounds = getDisplayBounds(year, employee.joinedAt);
+              const miniSegments = buildSegments(employee.approvedRequests || [], year, employee.joinedAt, miniTimelineBounds);
               return (
                 <button
                   key={employee.id}
@@ -395,7 +414,7 @@ export default function LeaveStatusBoardPage() {
           >
             {!selectedEmployee ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-sm text-slate-500">Select an employee from the left panel.</div> : (
               <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className={`grid gap-4 grid-cols-2 ${canViewJoinedCompany ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-400">Current status</p>
                     <p className={`mt-2 text-lg font-semibold ${selectedEmployee.currentStatus === 'At Leave' ? 'text-amber-600' : 'text-emerald-600'}`}>{selectedEmployee.currentStatus}</p>
@@ -409,10 +428,10 @@ export default function LeaveStatusBoardPage() {
                     <p className="text-xs uppercase tracking-wide text-slate-400">Expected return</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{selectedEmployee.nextReturnDate ? formatDateDisplay(selectedEmployee.nextReturnDate) : 'Already at work'}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 p-4">
+                  {canViewJoinedCompany ? <div className="rounded-2xl border border-slate-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-slate-400">Joined company</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{selectedEmployee.joinedAt ? formatDateDisplay(selectedEmployee.joinedAt) : 'Not set'}</p>
-                  </div>
+                  </div> : null}
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 p-4">

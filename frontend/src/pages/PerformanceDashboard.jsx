@@ -7,23 +7,7 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { fetchUsers } from '../services/userService';
 import { usePagePresentation } from '../hooks/usePagePresentation';
-import { getAverageKpiScore, getNormalizedKpiEntry } from '../utils/kpi';
-
-const getPerformanceBand = (score) => {
-  if (score === null || score === undefined) {
-    return 'Pending';
-  }
-  if (score >= 85) {
-    return 'Outstanding';
-  }
-  if (score >= 70) {
-    return 'Strong';
-  }
-  if (score >= 50) {
-    return 'Developing';
-  }
-  return 'Needs support';
-};
+import { getAverageKpiScore, getNormalizedKpiEntry, getPerformanceBand } from '../utils/kpi';
 
 export default function PerformanceDashboard() {
   const { settings } = useAuth();
@@ -56,7 +40,7 @@ export default function PerformanceDashboard() {
     <div className="space-y-6">
       <PageHeader title="Performance Dashboard" subtitle="Open a dedicated performance page for any employee to review their average score, KPI breakdown, and current performance band." />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <StatCard title="Employees" value={rows.length} helper="Active employees available for review" accent="from-violet-700 to-fuchsia-500" />
         <StatCard title="Performance-ready" value={employeesReady} helper="Employees with at least one saved KPI score" accent="from-sky-700 to-cyan-500" />
         <StatCard title="KPI source" value="Settings" helper="Performance content is driven by the KPI settings records" accent="from-emerald-700 to-green-500" />
@@ -67,7 +51,7 @@ export default function PerformanceDashboard() {
           {rows.map((employee) => {
             const entry = getNormalizedKpiEntry(settings?.kpi?.records?.[String(employee.id)] || settings?.kpi?.matrix?.[String(employee.id)] || {});
             const average = averages[String(employee.id)] ?? null;
-            const band = getPerformanceBand(average);
+            const band = getPerformanceBand(average, settings?.kpi?.performanceBands || {});
             const configuredKpis = entry.indicators.filter((indicator) => String(indicator?.label || '').trim() || indicator?.score !== '').length;
 
             return (

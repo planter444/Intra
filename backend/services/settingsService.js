@@ -56,10 +56,33 @@ const ensureKpiDefaults = (payload = {}) => {
 
   nextPayload.kpi = {
     records: {},
+    performanceBands: JSON.parse(JSON.stringify(defaultSettings.kpi?.performanceBands || {})),
     ...currentKpi,
     records: currentKpi.records && typeof currentKpi.records === 'object'
       ? currentKpi.records
-      : {}
+      : {},
+    performanceBands: currentKpi.performanceBands && typeof currentKpi.performanceBands === 'object'
+      ? {
+          ...(defaultSettings.kpi?.performanceBands || {}),
+          ...currentKpi.performanceBands,
+          outstanding: {
+            ...(defaultSettings.kpi?.performanceBands?.outstanding || {}),
+            ...(currentKpi.performanceBands.outstanding || {})
+          },
+          strong: {
+            ...(defaultSettings.kpi?.performanceBands?.strong || {}),
+            ...(currentKpi.performanceBands.strong || {})
+          },
+          developing: {
+            ...(defaultSettings.kpi?.performanceBands?.developing || {}),
+            ...(currentKpi.performanceBands.developing || {})
+          },
+          needsSupport: {
+            ...(defaultSettings.kpi?.performanceBands?.needsSupport || {}),
+            ...(currentKpi.performanceBands.needsSupport || {})
+          }
+        }
+      : JSON.parse(JSON.stringify(defaultSettings.kpi?.performanceBands || {}))
   };
 
   return nextPayload;

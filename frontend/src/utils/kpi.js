@@ -1,4 +1,12 @@
 export const KPI_COUNT = 5;
+export const PERFORMANCE_BAND_KEYS = ['outstanding', 'strong', 'developing', 'needsSupport'];
+export const DEFAULT_PERFORMANCE_BANDS = {
+  pendingLabel: 'Pending',
+  outstanding: { label: 'Outstanding', minScore: 85 },
+  strong: { label: 'Strong', minScore: 70 },
+  developing: { label: 'Developing', minScore: 50 },
+  needsSupport: { label: 'Needs support', minScore: 0 }
+};
 
 const normalizeScore = (value) => {
   if (value === '' || value === null || value === undefined) {
@@ -65,6 +73,38 @@ export const serializeKpiEntry = (entry = {}) => {
     coreRoles: normalized.coreRoles,
     indicators: normalized.indicators
   });
+};
+
+export const getNormalizedPerformanceBands = (bands = {}) => {
+  const source = bands && typeof bands === 'object' ? bands : {};
+
+  return PERFORMANCE_BAND_KEYS.reduce((accumulator, key) => {
+    const fallback = DEFAULT_PERFORMANCE_BANDS[key];
+    const current = source[key] && typeof source[key] === 'object' ? source[key] : {};
+    accumulator[key] = {
+      label: String(current.label || fallback.label).trim() || fallback.label,
+      minScore: Math.max(0, Math.min(100, Number(current.minScore ?? fallback.minScore) || 0))
+    };
+    return accumulator;
+  }, {
+    pendingLabel: String(source.pendingLabel || DEFAULT_PERFORMANCE_BANDS.pendingLabel).trim() || DEFAULT_PERFORMANCE_BANDS.pendingLabel
+  });
+};
+
+export const getPerformanceBand = (score, bands = {}) => {
+  const normalizedBands = getNormalizedPerformanceBands(bands);
+
+  if (score === null || score === undefined || !Number.isFinite(Number(score))) {
+    return normalizedBands.pendingLabel;
+  }
+
+  const numericScore = Number(score);
+  const match = PERFORMANCE_BAND_KEYS
+    .map((key) => normalizedBands[key])
+    .sort((left, right) => right.minScore - left.minScore)
+    .find((band) => numericScore >= band.minScore);
+
+  return (match || normalizedBands.needsSupport).label;
 };
 
 export const getAverageKpiScore = (entry = {}) => {

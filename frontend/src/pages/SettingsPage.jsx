@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
@@ -11,7 +11,7 @@ import { restoreSettings, updateSettings } from '../services/settingsService';
 import { uploadDocument } from '../services/documentService';
 import { fetchLeaveRequests, deleteLeaveRequest } from '../services/leaveService';
 import { fetchUsers } from '../services/userService';
-import { getAverageKpiScore, getNormalizedKpiEntry, serializeKpiEntry } from '../utils/kpi';
+import { getAverageKpiScore, getNormalizedKpiEntry, getNormalizedPerformanceBands, serializeKpiEntry } from '../utils/kpi';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const emptyLeaveTypeForm = { code: '', label: '', defaultDays: 0, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: false };
@@ -57,6 +57,7 @@ function SettingsInput({ label, value, onChange, colorPicker = false }) {
 
 export default function SettingsPage() {
   const { settings, replaceSettings, user } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const isCeoOnly = user?.role === 'ceo';
@@ -173,6 +174,10 @@ export default function SettingsPage() {
       : getNormalizedKpiEntry(),
     [draft.kpi?.matrix, draft.kpi?.records, selectedKpiEmployee]
   );
+  const performanceBands = useMemo(
+    () => getNormalizedPerformanceBands(draft.kpi?.performanceBands || {}),
+    [draft.kpi?.performanceBands]
+  );
   const selectedKpiAverage = useMemo(() => getAverageKpiScore(selectedKpiEntry), [selectedKpiEntry]);
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(draft || {}) !== JSON.stringify(settings || {}),
@@ -189,6 +194,25 @@ export default function SettingsPage() {
       setSelectedKpiEmployeeId(String(kpiEmployees[0].id));
     }
   }, [kpiEmployees, selectedKpiEmployeeId]);
+
+  useEffect(() => {
+    const requestedPage = location.state?.settingsPage;
+    const requestedEmployeeId = location.state?.selectedKpiEmployeeId;
+
+    if (!requestedPage && !requestedEmployeeId) {
+      return;
+    }
+
+    if (requestedPage && availablePages.some(([pageKey]) => pageKey === requestedPage)) {
+      setActivePage(requestedPage);
+    }
+
+    if (requestedEmployeeId) {
+      setSelectedKpiEmployeeId(String(requestedEmployeeId));
+    }
+
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [availablePages, location.pathname, location.state, navigate]);
 
   useUnsavedChangesGuard(hasUnsavedChanges);
 
@@ -267,6 +291,35 @@ export default function SettingsPage() {
     setSelectedEmployeeKpiEntry((current) => ({
       ...current,
       indicators: current.indicators.length > 5 ? current.indicators.filter((_, indicatorIndex) => indicatorIndex !== index) : current.indicators
+    }));
+  };
+
+  const setPerformanceBandField = (bandKey, field, value) => {
+    setDraft((current) => ({
+      ...current,
+      kpi: {
+        ...(current.kpi || {}),
+        performanceBands: {
+          ...(current.kpi?.performanceBands || {}),
+          [bandKey]: {
+            ...(current.kpi?.performanceBands?.[bandKey] || {}),
+            [field]: field === 'minScore' ? normalizeKpiScore(value) : value
+          }
+        }
+      }
+    }));
+  };
+
+  const setPerformancePendingLabel = (value) => {
+    setDraft((current) => ({
+      ...current,
+      kpi: {
+        ...(current.kpi || {}),
+        performanceBands: {
+          ...(current.kpi?.performanceBands || {}),
+          pendingLabel: value
+        }
+      }
     }));
   };
 
@@ -775,6 +828,7 @@ export default function SettingsPage() {
       })).reduce((scores, item) => ({ ...scores, ...item }), {});
       return accumulator;
     }, {});
+    const normalizedPerformanceBands = getNormalizedPerformanceBands(draft.kpi?.performanceBands || {});
     const payload = isCeoOnly
       ? {
           departments: normalizedDepartments,
@@ -792,6 +846,7 @@ export default function SettingsPage() {
           interface: normalizedInterface,
           kpi: {
             ...(draft.kpi || {}),
+            performanceBands: normalizedPerformanceBands,
             records: normalizedKpiRecords,
             matrix: normalizedKpiMatrix
           }
@@ -805,6 +860,7 @@ export default function SettingsPage() {
           interface: normalizedInterface,
           kpi: {
             ...(draft.kpi || {}),
+            performanceBands: normalizedPerformanceBands,
             records: normalizedKpiRecords,
             matrix: normalizedKpiMatrix
           }
@@ -1623,16 +1679,43 @@ export default function SettingsPage() {
       ) : null}
 
       {activePage === 'performance' ? (
-        <SectionCard title="Performance dashboard content" subtitle="The performance dashboard reflects the saved KPI records for each employee.">
-          <div className="grid gap-4 md:grid-cols-3">
-            <StatCard title="Employees ready" value={kpiEmployees.filter((employee) => getAverageKpiScore(getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {})) !== null).length} helper="Employees with at least one KPI score saved" accent="from-emerald-700 to-green-500" />
-            <StatCard title="KPI records" value={Object.keys(kpiRecordSource).length} helper="Employee records available to display" accent="from-sky-700 to-cyan-500" />
-            <StatCard title="Editable roles" value="CEO, IT Officer, Finance" helper="People who can update KPI content" accent="from-violet-700 to-fuchsia-500" />
-          </div>
-          <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-            Save KPI details on the KPI Matrix settings tab and this page will automatically reflect the employee core roles, KPI wording, individual scores, and average score.
-          </div>
-        </SectionCard>
+        <div className="space-y-6">
+          <SectionCard title="Performance dashboard content" subtitle="The performance dashboard reflects the saved KPI records for each employee.">
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+              <StatCard title="Employees ready" value={kpiEmployees.filter((employee) => getAverageKpiScore(getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {})) !== null).length} helper="Employees with at least one KPI score saved" accent="from-emerald-700 to-green-500" />
+              <StatCard title="KPI records" value={Object.keys(kpiRecordSource).length} helper="Employee records available to display" accent="from-sky-700 to-cyan-500" />
+              <StatCard title="Editable roles" value="CEO, IT Officer, Finance" helper="People who can update KPI content" accent="from-violet-700 to-fuchsia-500" />
+            </div>
+            <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+              Save KPI details on the KPI Matrix settings tab and this page will automatically reflect the employee core roles, KPI wording, individual scores, and average score.
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Band performance scale" subtitle="Update the labels and minimum score thresholds used to assign the overall performance band.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <SettingsInput label="Pending label" value={performanceBands.pendingLabel} onChange={setPerformancePendingLabel} />
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                ['outstanding', 'Outstanding'],
+                ['strong', 'Strong'],
+                ['developing', 'Developing'],
+                ['needsSupport', 'Needs support']
+              ].map(([key, title]) => (
+                <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-900">{title}</p>
+                  <div className="mt-4 space-y-4">
+                    <SettingsInput label="Label" value={performanceBands[key]?.label || ''} onChange={(value) => setPerformanceBandField(key, 'label', value)} />
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Minimum score</label>
+                      <input type="number" min="0" max="100" value={performanceBands[key]?.minScore ?? 0} onChange={(event) => setPerformanceBandField(key, 'minScore', event.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
       ) : null}
 
       {activePage === 'documents' ? (

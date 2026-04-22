@@ -7,6 +7,7 @@ import SectionCard from '../components/SectionCard';
 import { useAuth } from '../context/AuthContext';
 import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { createUser, fetchUsers, resetUserPassword, softDeleteUser, updateUser } from '../services/userService';
+import { normalizeDateInput } from '../utils/formatters';
 
 const EMPLOYEE_ROLE_SELECTION_PREFIX = 'title:';
 const privilegedRoleOptions = [
@@ -156,7 +157,7 @@ export default function EmployeesPage() {
       roleSelection: getRoleSelection(editingRecord.role, editingRecord.roleTitle),
       departmentId: editingRecord.departmentId || '',
       supervisorId: editingRecord.supervisorId || '',
-      joinedAt: editingRecord.joinedAt || '',
+      joinedAt: normalizeDateInput(editingRecord.joinedAt),
       positionTitle: editingRecord.positionTitle || '',
       password: ''
     });
@@ -191,7 +192,7 @@ export default function EmployeesPage() {
       roleSelection: getRoleSelection(record.role, record.roleTitle),
       departmentId: record.departmentId || '',
       supervisorId: record.supervisorId || '',
-      joinedAt: record.joinedAt || '',
+      joinedAt: normalizeDateInput(record.joinedAt),
       positionTitle: record.positionTitle || '',
       password: ''
     });

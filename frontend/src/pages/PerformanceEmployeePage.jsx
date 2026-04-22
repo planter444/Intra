@@ -1,29 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Gauge, Medal, Sparkles, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Gauge, Medal, Printer, Sparkles, TrendingUp } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { fetchUsers } from '../services/userService';
 import { usePagePresentation } from '../hooks/usePagePresentation';
-import { getAverageKpiScore, getNormalizedKpiEntry } from '../utils/kpi';
-
-const getPerformanceBand = (score) => {
-  if (score === null || score === undefined) {
-    return 'Pending';
-  }
-  if (score >= 85) {
-    return 'Outstanding';
-  }
-  if (score >= 70) {
-    return 'Strong';
-  }
-  if (score >= 50) {
-    return 'Developing';
-  }
-  return 'Needs support';
-};
+import { getAverageKpiScore, getNormalizedKpiEntry, getPerformanceBand } from '../utils/kpi';
 
 export default function PerformanceEmployeePage() {
   const { employeeId } = useParams();
@@ -50,7 +34,7 @@ export default function PerformanceEmployeePage() {
     () => entry.indicators.filter((indicator) => String(indicator?.label || '').trim() || indicator?.score !== ''),
     [entry.indicators]
   );
-  const performanceBand = useMemo(() => getPerformanceBand(average), [average]);
+  const performanceBand = useMemo(() => getPerformanceBand(average, settings?.kpi?.performanceBands || {}), [average, settings?.kpi?.performanceBands]);
 
   return (
     <div className="space-y-6">
@@ -58,10 +42,13 @@ export default function PerformanceEmployeePage() {
         title={employee ? `${employee.fullName} Performance Overview` : 'Employee Performance Overview'}
         subtitle={employee ? `${employee.positionTitle || employee.roleTitle || 'No designation'} · ${performanceBand}` : 'This employee record could not be found.'}
         actions={[
+          employee ? <button key="print" type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
+            <Printer size={16} />Print performance
+          </button> : null,
           <Link key="back" to="/performance-dashboard" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
             <ArrowLeft size={16} />Back to employees
           </Link>
-        ]}
+        ].filter(Boolean)}
       />
 
       {!employee ? (
@@ -107,7 +94,7 @@ export default function PerformanceEmployeePage() {
             </SectionCard>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
             <StatCard title="Employee" value={employee.fullName} helper="Performance profile" accent="from-violet-700 to-fuchsia-500" />
             <StatCard title="Designation" value={employee.positionTitle || employee.roleTitle || 'Not set'} helper="Saved employee role/title" accent="from-sky-700 to-cyan-500" />
             <StatCard title="Performance band" value={performanceBand} helper="Derived from the average KPI score" accent="from-emerald-700 to-green-500" />
@@ -131,7 +118,7 @@ export default function PerformanceEmployeePage() {
                         </div>
                         <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                           <Sparkles size={14} />
-                          {getPerformanceBand(value)}
+                          {getPerformanceBand(value, settings?.kpi?.performanceBands || {})}
                         </div>
                       </div>
                     </div>

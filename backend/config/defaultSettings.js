@@ -225,7 +225,14 @@ module.exports = {
     }
   ],
   kpi: {
-    records: {}
+    records: {},
+    performanceBands: {
+      pendingLabel: 'Pending',
+      outstanding: { label: 'Outstanding', minScore: 85 },
+      strong: { label: 'Strong', minScore: 70 },
+      developing: { label: 'Developing', minScore: 50 },
+      needsSupport: { label: 'Needs support', minScore: 0 }
+    }
   },
   leaveTypes: [
     { code: 'annual', label: 'Annual Leave', defaultDays: 21, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: true },

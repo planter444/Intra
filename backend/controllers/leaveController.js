@@ -15,7 +15,7 @@ const mapTimelineEvents = (request, auditTrail) => {
     request.requiresSupervisorReview
     || supervisorEvent
     || request.status === 'pending_supervisor'
-    || (request.supervisorApproverId && (request.hrApproverId || request.ceoApproverId || request.supervisorComment))
+    || request.supervisorApproverId
   );
 
   return {

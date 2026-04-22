@@ -34,7 +34,7 @@ export default function LeaveStatusTimeline({ request, actingHrLabel = 'CEO', co
   const hasSupervisorStage = Boolean(
     request?.requiresSupervisorReview
     || request?.status === 'pending_supervisor'
-    || (request?.supervisorApproverId && (request?.hrApproverId || request?.ceoApproverId || request?.supervisorComment))
+    || request?.supervisorApproverId
   );
 
   const stages = [

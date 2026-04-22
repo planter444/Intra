@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, BriefcaseBusiness, ChartColumnIncreasing } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, BriefcaseBusiness, ChartColumnIncreasing, Pencil } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
@@ -10,9 +10,11 @@ import { usePagePresentation } from '../hooks/usePagePresentation';
 import { getAverageKpiScore, getNormalizedKpiEntry } from '../utils/kpi';
 
 export default function KPIMatrixPage() {
-  const { settings } = useAuth();
+  const navigate = useNavigate();
+  const { settings, user } = useAuth();
   const [users, setUsers] = useState([]);
   const { cardStyle, animationStyle } = usePagePresentation();
+  const canManageKpi = ['admin', 'ceo', 'finance'].includes(user?.role);
 
   useEffect(() => {
     fetchUsers().then((list) => setUsers(list)).catch(() => setUsers([]));
@@ -30,9 +32,17 @@ export default function KPIMatrixPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="KPI Matrix" subtitle="Choose an employee to open a dedicated KPI detail page with their configured roles, KPI wording, and saved scores." />
+      <PageHeader
+        title="KPI Matrix"
+        subtitle="Choose an employee to open a dedicated KPI detail page with their configured roles, KPI wording, and saved scores."
+        actions={canManageKpi ? [
+          <button key="edit-kpi" type="button" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700" onClick={() => navigate('/settings', { state: { settingsPage: 'kpi' } })}>
+            <Pencil size={16} />Edit KPI setup
+          </button>
+        ] : undefined}
+      />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <StatCard title="Employees" value={rows.length} helper="Active employees available for KPI review" accent="from-emerald-700 to-green-500" />
         <StatCard title="Configured profiles" value={employeesWithScores} helper="Employees with at least one saved KPI score" accent="from-sky-700 to-cyan-500" />
         <StatCard title="KPI editing" value="Settings" helper="Core roles, KPI wording, and scores are now managed in Settings" accent="from-violet-700 to-fuchsia-500" />

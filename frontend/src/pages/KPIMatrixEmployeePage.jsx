@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, BriefcaseBusiness, ChartColumnIncreasing, Target } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, BriefcaseBusiness, ChartColumnIncreasing, Pencil, Target } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
@@ -11,9 +11,11 @@ import { getAverageKpiScore, getNormalizedKpiEntry } from '../utils/kpi';
 
 export default function KPIMatrixEmployeePage() {
   const { employeeId } = useParams();
-  const { settings } = useAuth();
+  const navigate = useNavigate();
+  const { settings, user } = useAuth();
   const [users, setUsers] = useState([]);
   const { cardStyle, animationStyle } = usePagePresentation();
+  const canManageKpi = ['admin', 'ceo', 'finance'].includes(user?.role);
 
   useEffect(() => {
     fetchUsers().then((list) => setUsers(list)).catch(() => setUsers([]));
@@ -42,10 +44,13 @@ export default function KPIMatrixEmployeePage() {
         title={employee ? `${employee.fullName} KPI Profile` : 'Employee KPI Profile'}
         subtitle={employee ? `${employee.positionTitle || employee.roleTitle || 'No designation'} · ${employee.departmentName || 'No department'}` : 'This employee record could not be found.'}
         actions={[
+          canManageKpi ? <button key="edit" type="button" onClick={() => navigate('/settings', { state: { settingsPage: 'kpi', selectedKpiEmployeeId: employeeId } })} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
+            <Pencil size={16} />Edit KPI setup
+          </button> : null,
           <Link key="back" to="/kpi-matrix" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
             <ArrowLeft size={16} />Back to employees
           </Link>
-        ]}
+        ].filter(Boolean)}
       />
 
       {!employee ? (
@@ -72,7 +77,7 @@ export default function KPIMatrixEmployeePage() {
             </div>
           </SectionCard>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
             <StatCard title="Employee" value={employee.fullName} helper="KPI detail profile" accent="from-emerald-700 to-green-500" />
             <StatCard title="Designation" value={employee.positionTitle || employee.roleTitle || 'Not set'} helper="Displayed on KPI pages" accent="from-sky-700 to-cyan-500" />
             <StatCard title="Configured KPIs" value={configuredIndicators.length} helper="KPIs with wording or score" accent="from-violet-700 to-fuchsia-500" />

@@ -1,5 +1,28 @@
 const { query } = require('../config/db');
 
+const normalizeDateOnly = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const matched = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (matched) {
+      return matched[1];
+    }
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const baseSelect = `
   SELECT
     u.id,
@@ -76,7 +99,7 @@ const mapUser = (row) => {
     roleTitle: row.role === 'admin' ? 'IT Officer' : (row.role === 'finance' ? 'Finance Officer' : row.role_title),
     gender: row.gender,
     departmentId: row.department_id,
-    joinedAt: row.joined_at,
+    joinedAt: normalizeDateOnly(row.joined_at),
     departmentName: row.department_name === 'Human Resources' ? 'Executive Office' : row.department_name,
     supervisorId: row.supervisor_id,
     supervisorName: row.supervisor_first_name ? `${row.supervisor_first_name} ${row.supervisor_last_name}` : null,

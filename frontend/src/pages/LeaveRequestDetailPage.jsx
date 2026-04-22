@@ -123,7 +123,7 @@ export default function LeaveRequestDetailPage() {
   const hasSupervisorStage = Boolean(
     request?.requiresSupervisorReview
     || request?.status === 'pending_supervisor'
-    || (request?.supervisorApproverId && (request?.hrApproverId || request?.ceoApproverId || request?.supervisorComment))
+    || request?.supervisorApproverId
   );
 
   const requestedDays = useMemo(
@@ -450,7 +450,7 @@ export default function LeaveRequestDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className={`grid gap-6 ${timeline.supervisor ? 'xl:grid-cols-2' : ''}`}>
         {timeline.supervisor ? (
           <SectionCard title="Supervisor Review" subtitle="Latest supervisor review details for this leave request.">
             <div className="space-y-4">
@@ -473,7 +473,7 @@ export default function LeaveRequestDetailPage() {
               </div>
             </div>
           </SectionCard>
-        ) : <div />}
+        ) : null}
 
         <SectionCard title="CEO Review" subtitle="Latest CEO review details for this leave request.">
           <div className="space-y-4">
