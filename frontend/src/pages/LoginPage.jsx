@@ -58,21 +58,40 @@ export default function LoginPage() {
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
-          style={{ opacity: Number(settings?.interface?.loginShapesOpacity ?? 0.18) || 0.18 }}
+          style={{ opacity: Number(settings?.interface?.loginShapesOpacity ?? 0.35) || 0.35 }}
         >
-          <div
-            className="absolute -left-32 -top-40 h-[520px] w-[520px] rounded-full blur-3xl"
-            style={{ background: `radial-gradient(circle at 30% 30%, ${settings?.interface?.loginShapesPrimaryColor || '#ffffff'}, transparent 70%)` }}
-          />
-          <div
-            className="absolute -right-44 top-24 h-[460px] w-[460px] rounded-full blur-3xl"
-            style={{ background: `radial-gradient(circle at 60% 40%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 70%)` }}
-          />
-          <div
-            className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 rounded-full blur-3xl"
-            style={{ background: `radial-gradient(circle at 50% 50%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 70%)` }}
-          />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.35)_1px,transparent_0)] [background-size:38px_38px]" />
+          {settings?.interface?.loginShapesStyle === 'spiderweb' ? (
+            <>
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `repeating-radial-gradient(circle at 30% 20%, transparent 0 14px, rgba(255,255,255,0.55) 14px 15px), repeating-conic-gradient(from 0deg at 30% 20%, rgba(255,255,255,0.6) 0deg 1deg, transparent 1deg 11deg)`
+                }}
+              />
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `repeating-radial-gradient(circle at 70% 80%, transparent 0 16px, rgba(187,247,208,0.5) 16px 17px), repeating-conic-gradient(from 20deg at 70% 80%, rgba(187,247,208,0.55) 0deg 1deg, transparent 1deg 12deg)`
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <div
+                className="absolute -left-32 -top-40 h-[520px] w-[520px] rounded-full blur-3xl"
+                style={{ background: `radial-gradient(circle at 30% 30%, ${settings?.interface?.loginShapesPrimaryColor || '#ffffff'}, transparent 68%)` }}
+              />
+              <div
+                className="absolute -right-44 top-24 h-[460px] w-[460px] rounded-full blur-3xl"
+                style={{ background: `radial-gradient(circle at 60% 40%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 68%)` }}
+              />
+              <div
+                className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 rounded-full blur-3xl"
+                style={{ background: `radial-gradient(circle at 50% 50%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 68%)` }}
+              />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.55)_1px,transparent_0)] [background-size:34px_34px]" />
+            </>
+          )}
         </div>
       ) : null}
       <div className="w-full max-w-md">

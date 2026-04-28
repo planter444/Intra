@@ -5,6 +5,7 @@ import { setAuthToken } from '../services/api';
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'kerea_hrms_auth';
+const SETTINGS_CACHE_KEY = 'kerea_hrms_settings_cache';
 
 const applyBranding = (settings) => {
   const branding = settings?.branding;
@@ -63,7 +64,11 @@ export const AuthProvider = ({ children }) => {
   });
   const [settings, setSettings] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved).settings : null;
+    if (saved) {
+      return JSON.parse(saved).settings;
+    }
+    const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+    return cached ? JSON.parse(cached) : null;
   });
   const [loading, setLoading] = useState(Boolean(token));
   const [error, setError] = useState('');
@@ -90,12 +95,16 @@ export const AuthProvider = ({ children }) => {
         const data = await meRequest();
         setUser(data.user);
         setSettings(data.settings);
+        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(data.settings));
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, user: data.user, settings: data.settings }));
       } catch (restoreError) {
         localStorage.removeItem(STORAGE_KEY);
         setToken(null);
         setUser(null);
-        setSettings(null);
+        setSettings(() => {
+          const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+          return cached ? JSON.parse(cached) : null;
+        });
       } finally {
         setLoading(false);
       }
@@ -114,6 +123,7 @@ export const AuthProvider = ({ children }) => {
       setToken(data.token);
       setUser(data.user);
       setSettings(data.settings);
+      localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(data.settings));
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: data.token, user: data.user, settings: data.settings }));
       return data.user;
     } catch (loginError) {
@@ -130,7 +140,7 @@ export const AuthProvider = ({ children }) => {
     setAuthToken(null);
     setToken(null);
     setUser(null);
-    setSettings(null);
+    setSettings((current) => current);
   };
 
   const replaceUser = (nextUser) => {
@@ -142,6 +152,7 @@ export const AuthProvider = ({ children }) => {
 
   const replaceSettings = (nextSettings) => {
     setSettings(nextSettings);
+    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(nextSettings));
     if (token && user) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, user, settings: nextSettings }));
     }

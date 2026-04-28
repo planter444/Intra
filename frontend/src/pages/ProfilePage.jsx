@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, Pencil } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import Modal from '../components/Modal';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +30,7 @@ export default function ProfilePage() {
   });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordVisibility, setPasswordVisibility] = useState({ currentPassword: false, newPassword: false, confirmPassword: false });
+  const [passwordModal, setPasswordModal] = useState({ open: false, tone: 'success', message: '' });
   const canEditFullProfile = user?.role === 'ceo';
   const isProfileEditable = isEditingProfile;
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
@@ -184,6 +186,12 @@ export default function ProfilePage() {
       return;
     }
 
+    if (String(passwordForm.newPassword || '').length < 8) {
+      setPasswordMessageTone('error');
+      setPasswordMessage('New password must be at least 8 characters.');
+      return;
+    }
+
     try {
       const result = await changeUserPassword(user.id, {
         currentPassword: passwordForm.currentPassword,
@@ -192,9 +200,12 @@ export default function ProfilePage() {
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setPasswordMessageTone('success');
       setPasswordMessage(result.message || 'Password changed successfully.');
+      setPasswordModal({ open: true, tone: 'success', message: result.message || 'Password changed successfully.' });
     } catch (error) {
       setPasswordMessageTone('error');
-      setPasswordMessage(error.response?.data?.message || 'Unable to change your password right now.');
+      const msg = error.response?.data?.message || 'Unable to change your password right now.';
+      setPasswordMessage(msg);
+      setPasswordModal({ open: true, tone: 'error', message: msg });
     }
   };
 
@@ -222,6 +233,22 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
+      <Modal
+        open={passwordModal.open}
+        title={passwordModal.tone === 'error' ? 'Password not changed' : 'Password changed'}
+        description={passwordModal.message}
+        onClose={() => setPasswordModal((current) => ({ ...current, open: false }))}
+        actions={[
+          <button
+            key="close"
+            type="button"
+            className={`rounded-2xl px-4 py-2 text-sm font-semibold text-white shadow-lg ${passwordModal.tone === 'error' ? 'bg-rose-600' : 'bg-brand-gradient'}`}
+            onClick={() => setPasswordModal((current) => ({ ...current, open: false }))}
+          >
+            Close
+          </button>
+        ]}
+      />
       <PageHeader title={settings?.labels?.profileModuleTitle || 'My Profile'} subtitle={settings?.labels?.profileSubtitle || 'Employees can update contact details such as phone number. Identity and role information is managed by supervisors, IT Officer, or CEO.'} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -302,8 +329,28 @@ export default function ProfilePage() {
               </div>
             </div>
           </SectionCard>
-          {canEditFullProfile ? (
-            <SectionCard title="Change password" subtitle="Update your CEO account password securely.">
+          {user?.role !== 'ceo' ? (
+            <SectionCard title="Leave balances" subtitle="Live policy balances pulled from PostgreSQL.">
+              <div className="space-y-3">
+                {visibleBalances.map((balance) => (
+                  <div key={balance.id} className="rounded-2xl border border-slate-200 px-4 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-medium text-slate-800">{balance.label}</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">{balance.code}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold text-slate-900">{balance.balanceDays}</p>
+                        <p className="text-xs text-slate-500">Used {balance.usedDays}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
+
+          <SectionCard title="Change password" subtitle="Update your account password securely.">
               <form className="space-y-4" onSubmit={handlePasswordSubmit}>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">Current password</label>
@@ -340,28 +387,6 @@ export default function ProfilePage() {
                 </div>
               </form>
             </SectionCard>
-          ) : null}
-
-          {user?.role !== 'ceo' ? (
-            <SectionCard title="Leave balances" subtitle="Live policy balances pulled from PostgreSQL.">
-              <div className="space-y-3">
-                {visibleBalances.map((balance) => (
-                  <div key={balance.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-medium text-slate-800">{balance.label}</p>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">{balance.code}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-semibold text-slate-900">{balance.balanceDays}</p>
-                        <p className="text-xs text-slate-500">Used {balance.usedDays}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          ) : null}
         </div>
       </div>
     </div>

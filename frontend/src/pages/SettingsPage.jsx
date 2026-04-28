@@ -1388,8 +1388,15 @@ export default function SettingsPage() {
                   <SettingsInput label="Login shapes - Primary color" value={draft.interface?.loginShapesPrimaryColor || ''} onChange={(value) => setInterfaceField('loginShapesPrimaryColor', value)} colorPicker />
                   <SettingsInput label="Login shapes - Secondary color" value={draft.interface?.loginShapesSecondaryColor || ''} onChange={(value) => setInterfaceField('loginShapesSecondaryColor', value)} colorPicker />
                   <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Login shapes style</label>
+                    <select value={draft.interface?.loginShapesStyle || 'glow'} onChange={(event) => setInterfaceField('loginShapesStyle', event.target.value)}>
+                      <option value="glow">Glow blobs</option>
+                      <option value="spiderweb">Spider web</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">Login shapes opacity (0 to 1)</label>
-                    <input type="number" min="0" max="1" step="0.01" value={draft.interface?.loginShapesOpacity ?? 0.18} onChange={(event) => setInterfaceField('loginShapesOpacity', Number(event.target.value))} />
+                    <input type="number" min="0" max="1" step="0.01" value={draft.interface?.loginShapesOpacity ?? 0.35} onChange={(event) => setInterfaceField('loginShapesOpacity', Number(event.target.value))} />
                   </div>
                 </>
               ) : null}
@@ -1673,7 +1680,7 @@ export default function SettingsPage() {
                           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),140px,auto]">
                             <div>
                               <label className="mb-2 block text-sm font-medium text-slate-700">KPI {index + 1} wording</label>
-                              <input value={indicator.label || ''} onChange={(event) => updateSelectedKpiIndicator(index, 'label', event.target.value)} placeholder="Enter KPI wording" />
+                              <input value={indicator.label || ''} onChange={(event) => updateSelectedKpiIndicator(index, 'label', event.target.value)} placeholder="Enter KPI" />
                             </div>
                             <div>
                               <label className="mb-2 block text-sm font-medium text-slate-700">Score</label>
