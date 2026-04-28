@@ -53,7 +53,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-gradient px-4 py-8 sm:px-6 lg:px-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-brand-gradient px-4 py-8 sm:px-6 lg:px-8">
+      {settings?.interface?.loginShapesEnabled ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{ opacity: Number(settings?.interface?.loginShapesOpacity ?? 0.18) || 0.18 }}
+        >
+          <div
+            className="absolute -left-32 -top-40 h-[520px] w-[520px] rounded-full blur-3xl"
+            style={{ background: `radial-gradient(circle at 30% 30%, ${settings?.interface?.loginShapesPrimaryColor || '#ffffff'}, transparent 70%)` }}
+          />
+          <div
+            className="absolute -right-44 top-24 h-[460px] w-[460px] rounded-full blur-3xl"
+            style={{ background: `radial-gradient(circle at 60% 40%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 70%)` }}
+          />
+          <div
+            className="absolute left-1/3 top-2/3 h-[520px] w-[520px] -translate-x-1/2 rounded-full blur-3xl"
+            style={{ background: `radial-gradient(circle at 50% 50%, ${settings?.interface?.loginShapesSecondaryColor || '#bbf7d0'}, transparent 70%)` }}
+          />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.35)_1px,transparent_0)] [background-size:38px_38px]" />
+        </div>
+      ) : null}
       <div className="w-full max-w-md">
         <div className="w-full rounded-[2rem] bg-white p-6 shadow-soft sm:p-8" style={{ ...cardStyle, ...animationStyle }}>
           <div className="mb-8 text-center">

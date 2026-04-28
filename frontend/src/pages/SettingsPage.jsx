@@ -1362,6 +1362,15 @@ export default function SettingsPage() {
               {LOGIN_PAGE_KEYS.map((key) => (
                 <SettingsInput key={key} label={key} value={draft.labels?.[key] || ''} onChange={(value) => setLabel(key, value)} />
               ))}
+              {isAdmin ? (
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
+                  <input type="checkbox" className="mt-1" checked={draft.interface?.loginShapesEnabled === true} onChange={(event) => setInterfaceField('loginShapesEnabled', event.target.checked)} />
+                  <span>
+                    <span className="block font-semibold text-slate-900">Enable login background shapes</span>
+                    <span className="mt-1 block text-xs text-slate-500">Adds the decorative shapes behind the login card while keeping the green gradient.</span>
+                  </span>
+                </label>
+              ) : null}
               {[
                 ['logoText', 'Logo initials'],
                 ['organizationName', 'Organization name'],
@@ -1374,6 +1383,16 @@ export default function SettingsPage() {
               ].map(([key, label]) => (
                 <SettingsInput key={key} label={label} value={draft.branding?.[key] || ''} onChange={(value) => setBranding(key, value)} colorPicker={key !== 'logoText' && key !== 'organizationName'} />
               ))}
+              {isAdmin ? (
+                <>
+                  <SettingsInput label="Login shapes - Primary color" value={draft.interface?.loginShapesPrimaryColor || ''} onChange={(value) => setInterfaceField('loginShapesPrimaryColor', value)} colorPicker />
+                  <SettingsInput label="Login shapes - Secondary color" value={draft.interface?.loginShapesSecondaryColor || ''} onChange={(value) => setInterfaceField('loginShapesSecondaryColor', value)} colorPicker />
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Login shapes opacity (0 to 1)</label>
+                    <input type="number" min="0" max="1" step="0.01" value={draft.interface?.loginShapesOpacity ?? 0.18} onChange={(event) => setInterfaceField('loginShapesOpacity', Number(event.target.value))} />
+                  </div>
+                </>
+              ) : null}
             </div>
           </SectionCard>
 

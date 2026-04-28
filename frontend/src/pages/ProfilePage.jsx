@@ -292,7 +292,12 @@ export default function ProfilePage() {
               </div>
               <div className="flex items-center gap-3">
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadProfilePhoto} />
-                <button type="button" className="rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-medium text-white shadow-lg" onClick={() => fileInputRef.current?.click()}>Upload photo</button>
+                <button type="button" className="rounded-2xl bg-brand-gradient px-4 py-2 text-sm font-medium text-white shadow-lg" onClick={() => {
+                  if (profilePhotoUrl && !window.confirm('Change the current profile picture?')) {
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}>{profilePhotoUrl ? 'Change profile' : 'Upload photo'}</button>
                 {photoMessage ? <span className={`text-sm ${photoMessageTone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>{photoMessage}</span> : null}
               </div>
             </div>

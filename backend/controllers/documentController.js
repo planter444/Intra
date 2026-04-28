@@ -1,7 +1,7 @@
 const fs = require('fs');
 const documentModel = require('../models/documentModel');
 const { logAction } = require('../services/auditService');
-const { deleteStoredDocument, getFolderTypeCodes, getRemoteDocumentUrl, isRemoteStoragePath, saveDocument, resolveDocumentPath } = require('../services/documentService');
+const { deleteStoredDocument, getDocumentCategoryTypeCodes, getFolderTypeCodes, getRemoteDocumentUrl, isRemoteStoragePath, saveDocument, resolveDocumentPath } = require('../services/documentService');
 
 const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition }) => {
   const response = await fetch(url);
@@ -31,6 +31,14 @@ const canAccessUserDocuments = (currentUser, targetUserId) => {
   return String(currentUser.id) === String(targetUserId);
 };
 
+const restrictedFolderTypes = new Set(['addendum']);
+const canManageRestrictedFolderType = (currentUser) => ['ceo', 'admin'].includes(currentUser.role);
+
+const getRestrictedFolderTypeCodes = async () => {
+  const employmentTypeCodes = await getDocumentCategoryTypeCodes('employment');
+  return new Set([...restrictedFolderTypes, ...employmentTypeCodes]);
+};
+
 const listDocuments = async (req, res, next) => {
   try {
     const targetUserId = req.params.userId || req.query.userId || (req.user.role === 'ceo' ? undefined : req.user.id);
@@ -55,6 +63,7 @@ const uploadDocument = async (req, res, next) => {
   try {
     const targetUserId = req.body.userId || req.user.id;
     const folderType = req.body.folderType;
+    const restrictedFolderTypeCodes = await getRestrictedFolderTypeCodes();
 
     if (!req.file) {
       return res.status(400).json({ message: 'A file is required.' });
@@ -63,6 +72,10 @@ const uploadDocument = async (req, res, next) => {
     const folderTypes = await getFolderTypeCodes();
     if (!folderTypes.includes(String(folderType || '').trim().toLowerCase())) {
       return res.status(400).json({ message: 'Invalid document folder type.' });
+    }
+
+    if (restrictedFolderTypeCodes.has(String(folderType || '').trim().toLowerCase()) && !canManageRestrictedFolderType(req.user)) {
+      return res.status(403).json({ message: 'Only CEO or IT Officer can upload documents to this folder type.' });
     }
 
     if (!canAccessUserDocuments(req.user, targetUserId) || ((req.user.role === 'employee' || req.user.role === 'supervisor') && String(targetUserId) !== String(req.user.id))) {
@@ -162,6 +175,12 @@ const deleteDocument = async (req, res, next) => {
     const document = await documentModel.findById(req.params.id);
     if (!document) {
       return res.status(404).json({ message: 'Document not found.' });
+    }
+
+    const restrictedFolderTypeCodes = await getRestrictedFolderTypeCodes();
+
+    if (restrictedFolderTypeCodes.has(String(document.folderType || '').trim().toLowerCase()) && !canManageRestrictedFolderType(req.user)) {
+      return res.status(403).json({ message: 'Only CEO or IT Officer can delete documents from this folder type.' });
     }
 
     const isOwner = String(document.userId) === String(req.user.id);

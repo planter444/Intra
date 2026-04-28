@@ -32,6 +32,11 @@ const parseCustomLabelFromFileName = (fileName = '') => {
 };
 
 const isAddendumDocument = (document) => String(document?.folderType || '').trim().toLowerCase() === 'addendum';
+const isEmploymentDocument = (document) => {
+  const normalized = String(document?.folderType || '').trim().toLowerCase();
+  return normalized === 'employment' || ['offer_letter', 'contract', 'warning'].includes(normalized);
+};
+const isRestrictedDocument = (document) => isAddendumDocument(document) || isEmploymentDocument(document);
 
 const getDocumentDisplayLabel = (document, folderLabelMap) => {
   const parsed = ['other', 'addendum'].includes(String(document?.folderType || '').trim().toLowerCase())
@@ -58,16 +63,26 @@ export default function DocumentsPage() {
   const [seenIdsReady, setSeenIdsReady] = useState(user.role !== 'ceo');
   const [previewState, setPreviewState] = useState(createEmptyPreviewState);
   const [isUploading, setIsUploading] = useState(false);
-  const canManageEmployeeDocuments = user.role === 'ceo';
-  const canAddDocumentAddendums = ['ceo', 'admin', 'finance'].includes(user.role);
+  const canManageEmployeeDocuments = ['ceo', 'admin'].includes(user.role);
+  const canManageRestrictedDocuments = ['ceo', 'admin'].includes(user.role);
+  const canAddDocumentAddendums = canManageRestrictedDocuments;
   const folderOptions = useMemo(
     () => (settings?.folders || []).filter((folder) => folder?.code && folder?.label),
     [settings?.folders]
   );
   const documentCategories = useMemo(() => settings?.documentCategories || [], [settings?.documentCategories]);
   const uploadCategories = useMemo(
-    () => documentCategories.filter((category) => canAddDocumentAddendums || String(category?.code || '').trim().toLowerCase() !== 'addendum'),
-    [canAddDocumentAddendums, documentCategories]
+    () => documentCategories.filter((category) => {
+      const code = String(category?.code || '').trim().toLowerCase();
+      if (code === 'addendum') {
+        return canManageRestrictedDocuments;
+      }
+      if (code === 'employment') {
+        return canManageRestrictedDocuments;
+      }
+      return true;
+    }),
+    [canManageRestrictedDocuments, documentCategories]
   );
   const folderLabelMap = useMemo(() => {
     const map = new Map();
@@ -160,15 +175,21 @@ export default function DocumentsPage() {
       const isAddendumSelection = uploadState.folderCategoryCode === 'addendum';
       const finalFolderType = isAddendumSelection ? 'addendum' : (selectedType?.code || 'other');
 
+      if (isEmploymentDocument({ folderType: finalFolderType }) && !canManageRestrictedDocuments) {
+        setMessageTone('error');
+        setMessage('Only CEO and IT Officer can upload employment documents.');
+        return;
+      }
+
       if (!canAddDocumentAddendums && (uploadState.folderCategoryCode === '__other' || uploadState.folderLabelCode === '__otherLabel' || finalFolderType === 'other')) {
         setMessageTone('error');
-        setMessage('Only CEO, IT Officer, and Finance Officer can create custom folder-type or label addendums.');
+        setMessage('Only CEO and IT Officer can create custom folder-type or label addendums.');
         return;
       }
 
       if (isAddendumSelection && !canAddDocumentAddendums) {
         setMessageTone('error');
-        setMessage('Only CEO, IT Officer, and Finance Officer can create addendums.');
+        setMessage('Only CEO and IT Officer can create addendums.');
         return;
       }
 
@@ -320,6 +341,12 @@ export default function DocumentsPage() {
   }, [selectedEmployeeId, visibleDocuments]);
 
   const handleDelete = async (document) => {
+    if (isRestrictedDocument(document) && !canManageRestrictedDocuments) {
+      setMessageTone('error');
+      setMessage('Only CEO and IT Officer can delete documents in this folder type.');
+      return;
+    }
+
     if (!window.confirm(`Delete ${document.fileName}?`)) {
       return;
     }
@@ -567,7 +594,7 @@ export default function DocumentsPage() {
                         }}>
                           Download
                         </button>
-                        {canManageEmployeeDocuments || String(row.userId) === String(user.id) ? (
+                        {(canManageEmployeeDocuments || (String(row.userId) === String(user.id) && (!isRestrictedDocument(row) || canManageRestrictedDocuments))) ? (
                           <button type="button" className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={(event) => {
                             event.stopPropagation();
                             handleDelete(row);

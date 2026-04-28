@@ -68,6 +68,33 @@ const getConfiguredFolders = async () => {
 
 const getFolderTypeCodes = async () => (await getConfiguredFolders()).map((folder) => folder.code);
 
+const getDocumentCategoryTypeCodes = async (categoryCode) => {
+  const normalizedCode = normalizeFolderCode(categoryCode);
+  if (!normalizedCode) {
+    return [];
+  }
+
+  const settings = await settingsModel.getGlobal();
+  const categories = [
+    ...(Array.isArray(settings?.payload?.documentCategories) ? settings.payload.documentCategories : []),
+    ...(Array.isArray(defaultSettings.documentCategories) ? defaultSettings.documentCategories : [])
+  ];
+
+  const seenCodes = new Set();
+  return categories
+    .filter((cat) => normalizeFolderCode(cat?.code) === normalizedCode)
+    .flatMap((cat) => Array.isArray(cat?.types) ? cat.types : [])
+    .reduce((accumulator, item) => {
+      const code = normalizeFolderCode(item?.code);
+      if (!code || seenCodes.has(code)) {
+        return accumulator;
+      }
+      seenCodes.add(code);
+      accumulator.push(code);
+      return accumulator;
+    }, []);
+};
+
 const ensureEmployeeFolders = async (userId) => {
   await fs.promises.mkdir(path.join(env.filesRoot, userId), { recursive: true });
 
@@ -139,6 +166,7 @@ const resolveDocumentPath = (storagePath) => path.resolve(storagePath);
 module.exports = {
   deleteStoredDocument,
   getConfiguredFolders,
+  getDocumentCategoryTypeCodes,
   getFolderTypeCodes,
   getRemoteDocumentUrl,
   ensureEmployeeFolders,

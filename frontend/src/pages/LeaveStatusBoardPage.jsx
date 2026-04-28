@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
-import { fetchLeaveOverview } from '../services/leaveService';
+import { fetchLeaveBalances, fetchLeaveOverview } from '../services/leaveService';
 import { formatDateDisplay, formatDateRangeDisplay } from '../utils/formatters';
 import { countKenyaLeaveDays, formatDateOnly, parseDateOnly } from '../utils/leaveCalendar';
 import { usePagePresentation } from '../hooks/usePagePresentation';
@@ -192,6 +192,7 @@ const getSegmentClassName = (segment) => {
 export default function LeaveStatusBoardPage() {
   const { user } = useAuth();
   const canViewJoinedCompany = ['admin', 'ceo', 'finance'].includes(user?.role);
+  const canViewEmployeeBalances = ['admin', 'ceo', 'finance'].includes(user?.role);
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [employees, setEmployees] = useState([]);
@@ -199,6 +200,8 @@ export default function LeaveStatusBoardPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedBalances, setSelectedBalances] = useState([]);
+  const [balancesLoading, setBalancesLoading] = useState(false);
   const { cardStyle, animationStyle } = usePagePresentation();
   const detailsSectionRef = useRef(null);
 
@@ -237,6 +240,37 @@ export default function LeaveStatusBoardPage() {
       active = false;
     };
   }, [year]);
+
+  useEffect(() => {
+    if (!canViewEmployeeBalances || !selectedEmployeeId) {
+      setSelectedBalances([]);
+      return;
+    }
+
+    let active = true;
+    setBalancesLoading(true);
+    fetchLeaveBalances({ userId: selectedEmployeeId })
+      .then((balances) => {
+        if (!active) {
+          return;
+        }
+        setSelectedBalances(Array.isArray(balances) ? balances : []);
+      })
+      .catch(() => {
+        if (active) {
+          setSelectedBalances([]);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setBalancesLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canViewEmployeeBalances, selectedEmployeeId]);
 
   const filteredEmployees = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -463,6 +497,33 @@ export default function LeaveStatusBoardPage() {
           </SectionCard>
 
           <SectionCard title="Year activity history" subtitle={selectedEmployee ? `A visual breakdown of ${selectedEmployee.fullName}'s ${year} timeline.` : 'Select an employee to see activity.'} style={{ ...cardStyle, ...animationStyle }}>
+            {selectedEmployee && canViewEmployeeBalances ? (
+              <div className="mb-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Leave balances</p>
+                {balancesLoading ? (
+                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">Loading balances…</div>
+                ) : selectedBalances.length ? (
+                  <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    {selectedBalances.map((balance, index) => (
+                      <div key={balance.id || `${balance.code}-${index}`} className="rounded-3xl bg-white p-5 shadow-soft">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-700">{balance.label}</p>
+                            <p className="mt-3 text-2xl font-semibold text-slate-900 sm:text-3xl">{Number(balance.balanceDays ?? 0)}</p>
+                            <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">of {Number(balance.defaultDays ?? 0)} days remaining</p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3 text-slate-700 shadow-sm">
+                            <CalendarDays size={18} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">No leave balances found for this employee.</div>
+                )}
+              </div>
+            ) : null}
             {!selectedEmployee ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-sm text-slate-500">Select an employee to see their timeline history.</div> : (
               <div className="space-y-3">
                 {selectedSegments.map((segment, index) => (
