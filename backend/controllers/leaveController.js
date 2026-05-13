@@ -4,7 +4,7 @@ const leaveModel = require('../models/leaveModel');
 const userModel = require('../models/userModel');
 const { logAction } = require('../services/auditService');
 const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolveDocumentPath, saveDocument } = require('../services/documentService');
-const { sendLeaveDecisionEmail } = require('../services/mailService');
+const { sendLeaveApplicationEmail, sendLeaveDecisionEmail } = require('../services/mailService');
 const { countKenyaLeaveDays, formatDateOnly, getNextWorkingDate } = require('../services/leaveCalendarService');
 
 const mapTimelineEvents = (request, auditTrail) => {
@@ -83,11 +83,48 @@ const sendLeaveDecisionNotification = async ({ request, status, reviewerName, co
     leaveTypeLabel: request.leaveTypeLabel,
     startDate: request.startDate,
     endDate: request.endDate,
+    daysRequested: request.daysRequested,
     status,
     reviewerName,
     comment,
     returnDate: status === 'approved' ? getNextWorkingDate(request.endDate) : null
   });
+};
+
+const getLeaveApplicationRecipients = async (request) => {
+  if (request.status === 'pending_supervisor' && request.supervisorApproverId) {
+    const supervisor = await userModel.findById(request.supervisorApproverId);
+    return {
+      recipients: supervisor && supervisor.isActive && !supervisor.isDeleted ? [supervisor] : [],
+      stageLabel: 'supervisor review'
+    };
+  }
+
+  if (request.status === 'pending_ceo') {
+    const ceos = await userModel.listAll({ role: 'ceo' });
+    return {
+      recipients: ceos.filter((entry) => entry.isActive && !entry.isDeleted),
+      stageLabel: 'CEO approval'
+    };
+  }
+
+  if (request.status === 'pending_hr') {
+    const [admins, ceos] = await Promise.all([
+      userModel.listAll({ role: 'admin' }),
+      userModel.listAll({ role: 'ceo' })
+    ]);
+    return {
+      recipients: [...admins, ...ceos].filter((entry) => entry.isActive && !entry.isDeleted),
+      stageLabel: 'approval'
+    };
+  }
+
+  return { recipients: [], stageLabel: 'review' };
+};
+
+const sendLeaveApplicationNotification = async (request) => {
+  const { recipients, stageLabel } = await getLeaveApplicationRecipients(request);
+  await sendLeaveApplicationEmail({ recipients, request, stageLabel });
 };
 
 const deleteRequestPermanently = async (req, res, next) => {
@@ -442,6 +479,8 @@ const createRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
+    sendLeaveApplicationNotification(request).catch((error) => console.error('Unable to send leave application email.', error.message));
+
     res.status(201).json({ request });
   } catch (error) {
     next(error);
@@ -631,6 +670,8 @@ const decideRequest = async (req, res, next) => {
           reviewerName: req.user.fullName,
           comment
         }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+      } else {
+        sendLeaveApplicationNotification(updatedRequest).catch((error) => console.error('Unable to send leave application email.', error.message));
       }
 
       return res.json({ request: updatedRequest });
@@ -676,6 +717,8 @@ const decideRequest = async (req, res, next) => {
           reviewerName: req.user.fullName,
           comment
         }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+      } else {
+        sendLeaveApplicationNotification(updatedRequest).catch((error) => console.error('Unable to send leave application email.', error.message));
       }
 
       return res.json({ request: updatedRequest });

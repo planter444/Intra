@@ -755,6 +755,12 @@ export default function SettingsPage() {
     }, {});
     const normalizedInterface = {
       ...(draft.interface || {}),
+      loginShapesEnabled: draft.interface?.loginShapesEnabled === true,
+      loginShapesOpacity: Math.min(1, Math.max(0, Number(draft.interface?.loginShapesOpacity ?? 0.85))),
+      loginShapesPrimaryColor: String(draft.interface?.loginShapesPrimaryColor || '#f97316').trim() || '#f97316',
+      loginShapesSecondaryColor: String(draft.interface?.loginShapesSecondaryColor || '#ffffff').trim() || '#ffffff',
+      loginShapesStyle: ['diagonal', 'glow', 'spiderweb'].includes(draft.interface?.loginShapesStyle) ? draft.interface.loginShapesStyle : 'diagonal',
+      loginShapesAnimated: draft.interface?.loginShapesAnimated !== false,
       mobileMenuAnimationEnabled: draft.interface?.mobileMenuAnimationEnabled !== false,
       mobileMenuAnimationType: ['slide', 'fade', 'scale'].includes(draft.interface?.mobileMenuAnimationType) ? draft.interface.mobileMenuAnimationType : 'slide',
       mobileMenuAnimationDurationMs: Math.max(120, Number(draft.interface?.mobileMenuAnimationDurationMs || 260)),
@@ -1385,19 +1391,27 @@ export default function SettingsPage() {
               ))}
               {isAdmin ? (
                 <>
-                  <SettingsInput label="Login shapes - Primary color" value={draft.interface?.loginShapesPrimaryColor || ''} onChange={(value) => setInterfaceField('loginShapesPrimaryColor', value)} colorPicker />
-                  <SettingsInput label="Login shapes - Secondary color" value={draft.interface?.loginShapesSecondaryColor || ''} onChange={(value) => setInterfaceField('loginShapesSecondaryColor', value)} colorPicker />
+                  <SettingsInput label="Login shapes - Primary color" value={draft.interface?.loginShapesPrimaryColor || '#f97316'} onChange={(value) => setInterfaceField('loginShapesPrimaryColor', value)} colorPicker />
+                  <SettingsInput label="Login shapes - Secondary color" value={draft.interface?.loginShapesSecondaryColor || '#ffffff'} onChange={(value) => setInterfaceField('loginShapesSecondaryColor', value)} colorPicker />
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">Login shapes style</label>
-                    <select value={draft.interface?.loginShapesStyle || 'glow'} onChange={(event) => setInterfaceField('loginShapesStyle', event.target.value)}>
+                    <select value={draft.interface?.loginShapesStyle || 'diagonal'} onChange={(event) => setInterfaceField('loginShapesStyle', event.target.value)}>
+                      <option value="diagonal">Bold diagonal ribbons</option>
                       <option value="glow">Glow blobs</option>
                       <option value="spiderweb">Spider web</option>
                     </select>
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700">Login shapes opacity (0 to 1)</label>
-                    <input type="number" min="0" max="1" step="0.01" value={draft.interface?.loginShapesOpacity ?? 0.35} onChange={(event) => setInterfaceField('loginShapesOpacity', Number(event.target.value))} />
+                    <input type="number" min="0" max="1" step="0.01" value={draft.interface?.loginShapesOpacity ?? 0.85} onChange={(event) => setInterfaceField('loginShapesOpacity', Number(event.target.value))} />
                   </div>
+                  <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 md:col-span-2">
+                    <input type="checkbox" className="mt-1" checked={draft.interface?.loginShapesAnimated !== false} onChange={(event) => setInterfaceField('loginShapesAnimated', event.target.checked)} />
+                    <span>
+                      <span className="block font-semibold text-slate-900">Animate login shapes</span>
+                      <span className="mt-1 block text-xs text-slate-500">Turn this off if you want the login decorations to stay still.</span>
+                    </span>
+                  </label>
                 </>
               ) : null}
             </div>
