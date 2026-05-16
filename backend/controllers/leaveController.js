@@ -4,12 +4,12 @@ const leaveModel = require('../models/leaveModel');
 const userModel = require('../models/userModel');
 const { logAction } = require('../services/auditService');
 const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolveDocumentPath, saveDocument } = require('../services/documentService');
-const { sendLeaveApplicationEmail, sendLeaveDecisionEmail } = require('../services/mailService');
+const { sendLeaveApplicationEmail, sendLeaveDecisionEmail, sendSupervisorDecisionToCeoEmail } = require('../services/mailService');
 const { countKenyaLeaveDays, formatDateOnly, getNextWorkingDate } = require('../services/leaveCalendarService');
 
 const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
-  const supervisorEvent = auditTrail.find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT'].includes(entry.action));
+  const supervisorEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT', 'LEAVE_SUPERVISOR_DECISION_REVISED'].includes(entry.action));
   const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'admin'].includes(entry.actorRole));
   const isCeoSupervisor = request.supervisorApproverRole === 'ceo';
   const hasSupervisorStage = Boolean(
@@ -73,7 +73,7 @@ const getLeaveOverviewUsers = async (currentUser) => {
 };
 
 const sendLeaveDecisionNotification = async ({ request, status, reviewerName, comment }) => {
-  if (!request?.employeeEmail || !['approved', 'rejected'].includes(status)) {
+  if (!request?.employeeEmail || !['approved', 'rejected', 'pending_ceo'].includes(status)) {
     return;
   }
 
@@ -89,6 +89,16 @@ const sendLeaveDecisionNotification = async ({ request, status, reviewerName, co
     comment,
     returnDate: status === 'approved' ? getNextWorkingDate(request.endDate) : null
   });
+};
+
+const getActiveCeoRecipients = async () => {
+  const ceos = await userModel.listAll({ role: 'ceo' });
+  return ceos.filter((entry) => entry.isActive && !entry.isDeleted);
+};
+
+const sendSupervisorDecisionToCeoNotification = async ({ request, supervisorName, decision, comment }) => {
+  const recipients = await getActiveCeoRecipients();
+  await sendSupervisorDecisionToCeoEmail({ recipients, request, supervisorName, decision, comment });
 };
 
 const getLeaveApplicationRecipients = async (request) => {
@@ -135,8 +145,20 @@ const deleteRequestPermanently = async (req, res, next) => {
       return res.status(404).json({ message: 'Leave request not found.' });
     }
 
-    if (!['admin', 'ceo'].includes(req.user.role)) {
-      return res.status(403).json({ message: 'Only Admin or CEO can delete leave requests.' });
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only the IT Officer can delete leave requests.' });
+    }
+
+    if (!['approved', 'rejected'].includes(request.status)) {
+      return res.status(400).json({ message: 'Only approved or disapproved leave requests can be deleted.' });
+    }
+
+    if (request.status === 'approved') {
+      await leaveModel.revertApprovedDaysToBalance({
+        userId: request.userId,
+        leaveTypeId: request.leaveTypeId,
+        daysRequested: request.daysRequested
+      });
     }
 
     if (request.supportingDocumentPath) {
@@ -166,15 +188,15 @@ const deleteRequestPermanently = async (req, res, next) => {
   }
 };
 
-const sendRemoteDocument = async ({ res, url, mimeType, fileName }) => {
+const sendRemoteDocument = async ({ res, url, mimeType, fileName, disposition = 'attachment' }) => {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error('Unable to fetch remote supporting document.');
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  res.setHeader('Content-Type', mimeType);
-  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.setHeader('Content-Type', mimeType || response.headers.get('content-type') || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `${disposition}; filename="${fileName || 'supporting-document'}"`);
   res.send(Buffer.from(arrayBuffer));
 };
 
@@ -274,11 +296,12 @@ const buildLeaveRouting = async (user) => {
   const requesterIsSupervisor = await userModel.hasDirectReports(user.id);
   const supervisor = user.supervisorId ? await userModel.findById(user.supervisorId) : null;
   const shouldStartWithSupervisor = user.role === 'employee' && !requesterIsSupervisor && supervisor && supervisor.isActive && !supervisor.isDeleted;
+  const supervisorIsCeo = shouldStartWithSupervisor && supervisor.role === 'ceo';
 
   return {
-    requiresSupervisorReview: shouldStartWithSupervisor,
-    initialStatus: shouldStartWithSupervisor ? 'pending_supervisor' : 'pending_hr',
-    supervisorApproverId: shouldStartWithSupervisor ? supervisor.id : null
+    requiresSupervisorReview: shouldStartWithSupervisor && !supervisorIsCeo,
+    initialStatus: supervisorIsCeo ? 'pending_ceo' : shouldStartWithSupervisor ? 'pending_supervisor' : 'pending_hr',
+    supervisorApproverId: shouldStartWithSupervisor && !supervisorIsCeo ? supervisor.id : null
   };
 };
 
@@ -599,23 +622,27 @@ const downloadSupportingDocument = async (req, res, next) => {
       return res.status(403).json({ message: 'You do not have permission to access this document.' });
     }
 
+    const disposition = req.query.preview === 'true' ? 'inline' : 'attachment';
+
     if (isRemoteStoragePath(request.supportingDocumentPath)) {
       await sendRemoteDocument({
         res,
         url: getRemoteDocumentUrl({
           storedName: request.supportingDocumentStoredName,
           mimeType: request.supportingDocumentMimeType,
-          fileName: request.supportingDocumentName
+          fileName: request.supportingDocumentName,
+          asAttachment: req.query.preview !== 'true'
         }),
         mimeType: request.supportingDocumentMimeType,
-        fileName: request.supportingDocumentName
+        fileName: request.supportingDocumentName,
+        disposition
       });
       return;
     }
 
     const filePath = resolveDocumentPath(request.supportingDocumentPath);
-    res.setHeader('Content-Type', request.supportingDocumentMimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${request.supportingDocumentName}"`);
+    res.setHeader('Content-Type', request.supportingDocumentMimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${request.supportingDocumentName || 'supporting-document'}"`);
 
     const stream = fs.createReadStream(filePath);
     stream.on('error', next);
@@ -646,21 +673,13 @@ const decideRequest = async (req, res, next) => {
         return res.status(403).json({ message: 'Only the assigned supervisor can action this request.' });
       }
 
-      const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
+      const nextStatus = decision === 'approve' ? 'pending_ceo' : 'rejected';
       const updatedRequest = await leaveModel.updateRequestStatus({
         id,
         status: nextStatus,
         supervisorApproverId: req.user.id,
         supervisorComment: normalizedComment || null
       });
-
-      if (nextStatus === 'approved') {
-        await leaveModel.applyApprovedDaysToBalance({
-          userId: request.userId,
-          leaveTypeId: request.leaveTypeId,
-          daysRequested: request.daysRequested
-        });
-      }
 
       await logAction({
         actorUserId: req.user.id,
@@ -669,7 +688,7 @@ const decideRequest = async (req, res, next) => {
         entityType: 'leave_request',
         entityId: String(id),
         description: `${req.user.fullName} ${decision}d leave request ${id} as supervisor.`,
-        metadata: { comment: normalizedComment },
+        metadata: { comment: normalizedComment, nextStatus },
         ipAddress: req.ip
       });
 
@@ -679,6 +698,13 @@ const decideRequest = async (req, res, next) => {
         reviewerName: req.user.fullName,
         comment: normalizedComment
       }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      sendSupervisorDecisionToCeoNotification({
+        request: updatedRequest,
+        supervisorName: req.user.fullName,
+        decision,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send supervisor decision email to CEO.', error.message));
 
       return res.json({ request: updatedRequest });
     }
@@ -720,6 +746,49 @@ const decideRequest = async (req, res, next) => {
         reviewerName: req.user.fullName,
         comment: normalizedComment
       }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      return res.json({ request: updatedRequest });
+    }
+
+    if (
+      req.user.role !== 'ceo'
+      && request.supervisorApproverRole !== 'ceo'
+      && ['pending_ceo', 'rejected'].includes(request.status)
+      && String(request.supervisorApproverId) === String(req.user.id)
+      && !request.ceoApproverId
+    ) {
+      const nextStatus = decision === 'approve' ? 'pending_ceo' : 'rejected';
+      const updatedRequest = await leaveModel.updateRequestStatus({
+        id,
+        status: nextStatus,
+        supervisorApproverId: req.user.id,
+        supervisorComment: normalizedComment || null
+      });
+
+      await logAction({
+        actorUserId: req.user.id,
+        actorRole: req.user.role,
+        action: 'LEAVE_SUPERVISOR_DECISION_REVISED',
+        entityType: 'leave_request',
+        entityId: String(id),
+        description: `${req.user.fullName} revised the supervisor decision for leave request ${id}.`,
+        metadata: { decision, comment: normalizedComment, nextStatus },
+        ipAddress: req.ip
+      });
+
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: nextStatus,
+        reviewerName: req.user.fullName,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      sendSupervisorDecisionToCeoNotification({
+        request: updatedRequest,
+        supervisorName: req.user.fullName,
+        decision,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send supervisor decision email to CEO.', error.message));
 
       return res.json({ request: updatedRequest });
     }
