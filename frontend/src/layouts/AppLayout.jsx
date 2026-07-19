@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X, DollarSign } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
@@ -21,7 +21,8 @@ const routeMap = {
   audit: '/audit-logs',
   kpi: '/kpi-matrix',
   performance: '/performance-dashboard',
-  leave_status: '/leave-status'
+  leave_status: '/leave-status',
+  payslips: '/payslips'
 };
 
 const labelKeyMap = {
@@ -45,20 +46,21 @@ const iconMap = {
   audit: ShieldCheck,
   kpi: Table,
   performance: BarChart2,
-  leave_status: ClipboardList
+  leave_status: ClipboardList,
+  payslips: DollarSign
 };
 
 const defaultNavigationByRole = {
-  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents'],
-  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents'],
+  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'payslips'],
+  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'payslips'],
   hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
-  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit'],
-  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'kpi', 'performance'],
-  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings']
+  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit', 'payslips'],
+  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'kpi', 'performance', 'payslips'],
+  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'payslips']
 };
 
 export default function AppLayout({ children }) {
-  const { user, settings, logout, error, sessionExpired } = useAuth();
+  const { user, settings, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
@@ -303,6 +305,11 @@ export default function AppLayout({ children }) {
         <div className={`pointer-events-none ${isMobile ? 'fixed' : 'absolute'} inset-0`} style={{ backgroundColor: withOpacity(redesignedTheme?.overlayColor || '#0b2e13', redesignedTheme?.overlayOpacity ?? 0.45) }} />
       ) : null}
       <div className="relative flex min-h-screen overflow-x-hidden">
+        <div
+          className="pointer-events-none fixed top-0 z-30 hidden h-10 w-10 bg-white md:block"
+          style={{ left: 'calc(18rem - 2.5rem)' }}
+          aria-hidden="true"
+        />
         <aside
           className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[88vw] transform px-5 py-6 text-white shadow-2xl ${menuAnimEnabled ? 'transition' : ''} md:flex md:h-screen md:flex-col md:translate-x-0 md:overflow-hidden md:rounded-r-[2.5rem] overflow-hidden overflow-y-auto overscroll-contain ${mobileOpen ? mobileOpenClasses : mobileClosedClasses}`}
           style={{ backgroundImage: sidebarBackgroundImage, ...sidebarBackdrop, transitionDuration: menuAnimEnabled ? `${menuAnimDuration}ms` : undefined }}
@@ -417,22 +424,7 @@ export default function AppLayout({ children }) {
           </header>
 
           <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-6 md:px-8">
-            {sessionExpired ? (
-              <div className="mx-auto max-w-2xl rounded-3xl border border-amber-200 bg-amber-50 p-6 text-center shadow-soft">
-                <h1 className="text-2xl font-semibold text-amber-950">Your session needs attention</h1>
-                <p className="mt-3 text-sm leading-6 text-amber-800">
-                  {error || 'Your login session has expired. Please refresh the page or log in again to continue using KEREA HRMS.'}
-                </p>
-                <div className="mt-6 flex flex-wrap justify-center gap-3">
-                  <button type="button" className="rounded-2xl border border-amber-300 bg-white px-5 py-3 text-sm font-semibold text-amber-900" onClick={() => window.location.reload()}>
-                    Refresh page
-                  </button>
-                  <button type="button" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white" onClick={logout}>
-                    Log out and sign in again
-                  </button>
-                </div>
-              </div>
-            ) : children}
+            {children}
           </main>
         </div>
       </div>

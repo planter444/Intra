@@ -101,6 +101,59 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS payroll_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id_number VARCHAR(50),
+  kra_pin VARCHAR(50),
+  nssf_number VARCHAR(50),
+  shif_number VARCHAR(50),
+  payment_mode VARCHAR(80) DEFAULT 'Bank Transfer',
+  gross_salary NUMERIC(14,2) NOT NULL DEFAULT 0,
+  allowances NUMERIC(14,2) NOT NULL DEFAULT 0,
+  bonuses NUMERIC(14,2) NOT NULL DEFAULT 0,
+  overtime NUMERIC(14,2) NOT NULL DEFAULT 0,
+  gratuity NUMERIC(14,2) NOT NULL DEFAULT 0,
+  paye NUMERIC(14,2) NOT NULL DEFAULT 0,
+  nssf NUMERIC(14,2) NOT NULL DEFAULT 0,
+  shif NUMERIC(14,2) NOT NULL DEFAULT 0,
+  housing_levy NUMERIC(14,2) NOT NULL DEFAULT 0,
+  pension NUMERIC(14,2) NOT NULL DEFAULT 0,
+  other_deductions NUMERIC(14,2) NOT NULL DEFAULT 0,
+  personal_relief NUMERIC(14,2) NOT NULL DEFAULT 2400,
+  insurance_relief NUMERIC(14,2) NOT NULL DEFAULT 0,
+  other_contributions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payslip_templates (
+  id BIGSERIAL PRIMARY KEY,
+  version INTEGER NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_data BYTEA NOT NULL,
+  field_map JSONB NOT NULL DEFAULT '{}'::jsonb,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  uploaded_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payslips (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period VARCHAR(7) NOT NULL,
+  template_id BIGINT REFERENCES payslip_templates(id) ON DELETE SET NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  pdf_data BYTEA NOT NULL,
+  generated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, period)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payslips_user ON payslips(user_id);
+CREATE INDEX IF NOT EXISTS idx_payslips_period ON payslips(period);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY,
   actor_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -122,6 +175,42 @@ ADD COLUMN IF NOT EXISTS role_title VARCHAR(120);
 
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS joined_at DATE;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS basic_salary NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS housing_allowance NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS transport_allowance NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS medical_allowance NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS other_allowances NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS paye_tax NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS nssf_contribution NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS nhif_contribution NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS other_deductions NUMERIC(12,2) DEFAULT 0;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS bank_name VARCHAR(120);
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS bank_account_number VARCHAR(50);
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS bank_branch VARCHAR(120);
 
 UPDATE users
 SET role = 'ceo'
@@ -230,6 +319,9 @@ DROP CONSTRAINT IF EXISTS documents_folder_type_check;
 
 ALTER TABLE documents
 ADD CONSTRAINT documents_folder_type_check CHECK (CHAR_LENGTH(TRIM(folder_type)) > 0);
+
+ALTER TABLE payroll_profiles
+ADD COLUMN IF NOT EXISTS nssf_tier VARCHAR(20) NOT NULL DEFAULT 'I_II';
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
