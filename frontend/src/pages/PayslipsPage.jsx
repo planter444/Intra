@@ -39,6 +39,7 @@ const emptyProfile = {
   housingLevy: 0,
   pension: 0,
   otherDeductions: 0,
+  customDeductions: [],
   personalRelief: 2400,
   insuranceRelief: 0,
   otherContributions: []
@@ -69,8 +70,8 @@ function SlipSection({ title, children }) {
 function SlipRow({ label, children, alt }) {
   return (
     <div className={`flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2 last:border-b-0 ${alt ? 'bg-emerald-50/40' : ''}`}>
-      <span className="text-xs font-medium text-slate-500">{label}</span>
-      <div className="w-44">{children}</div>
+      <span className="text-xs font-medium text-slate-500 flex-1">{label}</span>
+      <div className="w-56">{children}</div>
     </div>
   );
 }
@@ -172,8 +173,9 @@ export default function PayslipsPage() {
   const totals = useMemo(() => {
     const earnings = ['grossSalary', 'allowances', 'bonuses', 'overtime', 'gratuity']
       .reduce((sum, key) => sum + Number(profile[key] || 0), 0);
+    const customDeductionsTotal = (profile.customDeductions || []).reduce((sum, d) => sum + Number(d.amount || 0), 0);
     const deductions = ['paye', 'nssf', 'shif', 'housingLevy', 'pension', 'otherDeductions']
-      .reduce((sum, key) => sum + Number(profile[key] || 0), 0);
+      .reduce((sum, key) => sum + Number(profile[key] || 0), 0) + customDeductionsTotal;
     const preTax = ['nssf', 'shif', 'housingLevy', 'pension'].reduce((sum, key) => sum + Number(profile[key] || 0), 0);
     return { earnings, deductions, net: earnings - deductions, taxable: earnings - preTax, preTax };
   }, [profile]);
@@ -307,6 +309,14 @@ export default function PayslipsPage() {
       const contributions = [...(current.otherContributions || [])];
       contributions[index] = { ...contributions[index], [key]: value };
       return { ...current, otherContributions: contributions };
+    });
+  };
+
+  const updateCustomDeduction = (index, key, value) => {
+    setProfile((current) => {
+      const deductions = [...(current.customDeductions || [])];
+      deductions[index] = { ...deductions[index], [key]: value };
+      return { ...current, customDeductions: deductions };
     });
   };
 
@@ -470,7 +480,53 @@ export default function PayslipsPage() {
                     <SlipRow label="SHIF (Social Health Insurance Fund)"><MoneyInput value={profile.shif} onChange={setField('shif')} /></SlipRow>
                     <SlipRow label="Housing Levy" alt><MoneyInput value={profile.housingLevy} onChange={setField('housingLevy')} /></SlipRow>
                     <SlipRow label="Pension"><MoneyInput value={profile.pension} onChange={setField('pension')} /></SlipRow>
+                    
+                    {/* Custom Deductions - appear before Other Deductions */}
+                    {(profile.customDeductions || []).map((deduction, index) => (
+                      <div key={index} className={`flex items-center gap-2 border-b border-slate-100 px-4 py-2 last:border-b-0 ${index % 2 ? 'bg-emerald-50/40' : ''}`}>
+                        <input
+                          type="text"
+                          placeholder="Deduction name (e.g. Loan Repayment)"
+                          value={deduction.label || ''}
+                          onChange={(event) => updateCustomDeduction(index, 'label', event.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={deduction.amount ?? 0}
+                          onChange={(event) => updateCustomDeduction(index, 'amount', event.target.value === '' ? 0 : Number(event.target.value))}
+                          className="w-32 rounded-lg border border-slate-200 bg-transparent px-2 py-1.5 text-right text-sm font-semibold focus:border-emerald-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setProfile((current) => ({
+                            ...current,
+                            customDeductions: (current.customDeductions || []).filter((_, i) => i !== index)
+                          }))}
+                          className="rounded-lg bg-rose-50 p-1.5 text-rose-600"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setProfile((current) => ({
+                          ...current,
+                          customDeductions: [...(current.customDeductions || []), { label: '', amount: 0 }]
+                        }))}
+                        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      >
+                        <Plus size={14} />
+                        Add deduction
+                      </button>
+                    </div>
+                    
                     <SlipRow label="Other Deductions" alt><MoneyInput value={profile.otherDeductions} onChange={setField('otherDeductions')} /></SlipRow>
+                    
                     <SlipRow label="Total Deductions"><span className="block text-right text-sm font-bold text-emerald-900">{formatMoney(totals.deductions)}</span></SlipRow>
                   </SlipSection>
 
