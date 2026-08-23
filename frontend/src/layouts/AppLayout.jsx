@@ -1,10 +1,11 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X, DollarSign } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X, DollarSign, Plane } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments, getDocumentUrl } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
+import { getPendingTravelRequestCount } from '../services/travelService';
 import { getPendingReviewCount } from '../utils/leave';
 import { getRedesignedTheme, isRedesignedActive, resolvePagePresentationKey, withOpacity } from '../hooks/usePagePresentation';
 
@@ -22,7 +23,9 @@ const routeMap = {
   kpi: '/kpi-matrix',
   performance: '/performance-dashboard',
   leave_status: '/leave-status',
-  payslips: '/payslips'
+  payslips: '/payslips',
+  travel: '/travel',
+  leave_report: '/leave-report'
 };
 
 const labelKeyMap = {
@@ -33,7 +36,8 @@ const labelKeyMap = {
   settings: 'navigationSettings',
   audit: 'navigationAudit',
   kpi: 'navigationKpiMatrix',
-  performance: 'navigationPerformance'
+  performance: 'navigationPerformance',
+  leave_report: 'navigationLeaveReport'
 };
 
 const iconMap = {
@@ -47,22 +51,25 @@ const iconMap = {
   kpi: Table,
   performance: BarChart2,
   leave_status: ClipboardList,
-  payslips: DollarSign
+  payslips: DollarSign,
+  travel: Plane,
+  leave_report: FileText
 };
 
 const defaultNavigationByRole = {
-  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'payslips'],
-  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'payslips'],
-  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents'],
-  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit', 'payslips'],
-  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'settings', 'kpi', 'performance', 'payslips'],
-  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'payslips']
+  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'payslips', 'travel'],
+  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'payslips', 'travel'],
+  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'travel'],
+  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_report', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit', 'payslips', 'travel'],
+  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_report', 'leave_status', 'documents', 'settings', 'kpi', 'performance', 'payslips', 'travel'],
+  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'payslips', 'travel']
 };
 
 export default function AppLayout({ children }) {
   const { user, settings, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  const [pendingTravelCount, setPendingTravelCount] = useState(0);
   const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [isMobile, setIsMobile] = useState(false);
@@ -122,6 +129,31 @@ export default function AppLayout({ children }) {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', refreshPendingReviewCount);
       window.removeEventListener('leave-requests-updated', refreshPendingReviewCount);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setPendingTravelCount(0);
+      return;
+    }
+
+    const refreshPendingTravelCount = () => {
+      getPendingTravelRequestCount()
+        .then((count) => setPendingTravelCount(count))
+        .catch((error) => {
+          if (error.response?.status !== 429) {
+            setPendingTravelCount(0);
+          }
+        });
+    };
+
+    refreshPendingTravelCount();
+    const intervalId = window.setInterval(refreshPendingTravelCount, 60000);
+    window.addEventListener('focus', refreshPendingTravelCount);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshPendingTravelCount);
     };
   }, [user]);
 
@@ -364,6 +396,8 @@ export default function AppLayout({ children }) {
                       <span className="relative flex items-center gap-2">
                         {item.key === 'leaves' && pendingReviewCount > 0 ? (
                           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingReviewCount}</span>
+                        ) : item.key === 'travel' && pendingTravelCount > 0 ? (
+                          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingTravelCount}</span>
                         ) : item.key === 'documents' && documentNotificationCount > 0 ? (
                           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{documentNotificationCount}</span>
                         ) : null}
