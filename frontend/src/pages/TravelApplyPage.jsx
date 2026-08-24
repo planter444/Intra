@@ -230,7 +230,6 @@ export default function TravelApplyPage() {
               <input
                 type="date"
                 value={form.startDate}
-                min={form.travelType === 'reimbursement' ? '' : getToday()}
                 onChange={(event) => setForm((current) => {
                   const nextStart = event.target.value;
                   const nextEnd = current.endDate && current.endDate >= nextStart ? current.endDate : nextStart;
@@ -244,7 +243,7 @@ export default function TravelApplyPage() {
               <input
                 type="date"
                 value={form.endDate}
-                min={form.startDate || (form.travelType === 'reimbursement' ? '' : getToday())}
+                min={form.startDate}
                 onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
                 required
               />
