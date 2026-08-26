@@ -246,6 +246,7 @@ const updateUser = async (req, res, next) => {
         email: normalizedEmail,
         phone: req.body.phone,
         positionTitle: req.body.positionTitle,
+        designation: req.body.designation,
         gender: req.body.gender
       }
       : {
@@ -305,6 +306,14 @@ const updateUser = async (req, res, next) => {
 
       if (Object.prototype.hasOwnProperty.call(req.body, 'supervisorId')) {
         payload.supervisorId = req.body.supervisorId || null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body, 'designation')) {
+        const allowedDesignations = ['Field Officer', 'Intern', 'Secretariat', 'Consultant'];
+        if (req.body.designation && !allowedDesignations.includes(req.body.designation)) {
+          return res.status(400).json({ message: 'Invalid designation.' });
+        }
+        payload.designation = req.body.designation || null;
       }
 
       payload.isActive = typeof req.body.isActive === 'boolean' ? req.body.isActive : undefined;

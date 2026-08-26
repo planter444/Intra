@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, DollarSign } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import Modal from '../components/Modal';
@@ -9,7 +9,7 @@ import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
 import { createTravelRequest, fetchTravelRequests } from '../services/travelService';
 
 const initialForm = {
-  travelType: '',
+  travelType: 'booking',
   startDate: '',
   endDate: '',
   origin: '',
@@ -18,20 +18,166 @@ const initialForm = {
   estimatedCost: '',
   currency: 'KES',
   receiptFile: null,
-  supportingDocuments: null
+  supportingDocuments: null,
+  designation: '',
+  travelCategory: '',
+  travelTypeDetail: '',
+  projectProgramme: '',
+  dsaRate: '',
+  dsaCurrency: 'KES',
+  dsaAmount: ''
 };
 
 const getToday = () => new Date().toISOString().split('T')[0];
 
+// DSA Rate Configuration
+const getDSARate = (designation, travelCategory, travelTypeDetail) => {
+  console.log('getDSARate called:', { designation, travelCategory, travelTypeDetail });
+  
+  if (!designation || !travelCategory) {
+    console.log('Missing designation or travelCategory');
+    return null;
+  }
+
+  // Normalize designation to handle case sensitivity and spacing
+  const normalizedDesignation = designation.toLowerCase().replace(/\s+/g, '');
+  console.log('Normalized designation:', normalizedDesignation);
+
+  // Within Kenya - Official Overnight Travel
+  if (travelCategory === 'Within Kenya' && travelTypeDetail === 'Official Overnight Travel') {
+    if (normalizedDesignation === 'fieldofficer') {
+      console.log('Match: Field Officer - Within Kenya Overnight');
+      return { rate: 2500, currency: 'KES', unit: 'per night' };
+    }
+    if (normalizedDesignation === 'intern' || normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
+      console.log('Match: Intern/Secretariat/Consultant - Within Kenya Overnight');
+      return { rate: 4000, currency: 'KES', unit: 'per night' };
+    }
+    console.log('No match for Within Kenya Overnight');
+    return null;
+  }
+
+  // Within Kenya - Official Day Travel
+  if (travelCategory === 'Within Kenya' && travelTypeDetail === 'Official Day Travel') {
+    if (normalizedDesignation === 'fieldofficer') {
+      console.log('Match: Field Officer - Within Kenya Day');
+      return { rate: 1500, currency: 'KES', unit: 'per day' };
+    }
+    if (normalizedDesignation === 'intern' || normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
+      console.log('Match: Intern/Secretariat/Consultant - Within Kenya Day');
+      return { rate: 2000, currency: 'KES', unit: 'per day' };
+    }
+    console.log('No match for Within Kenya Day');
+    return null;
+  }
+
+  // East Africa - All designations
+  if (travelCategory === 'East Africa') {
+    console.log('Match: East Africa - All designations');
+    return { rate: 35, currency: 'USD', unit: 'per day' };
+  }
+
+  // International - All designations
+  if (travelCategory === 'International') {
+    console.log('Match: International - All designations');
+    return { rate: 50, currency: 'USD', unit: 'per day' };
+  }
+
+  console.log('No match for travel category');
+  return null;
+};
+
+// Calculate DSA amount based on dates and rate
+const calculateDSAAmount = (startDate, endDate, dsaRate, travelTypeDetail) => {
+  if (!startDate || !endDate || !dsaRate) return 0;
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = end - start;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (travelTypeDetail === 'Official Overnight Travel') {
+    // Nights = End Date - Start Date
+    const nights = diffDays;
+    return nights * dsaRate.rate;
+  } else {
+    // Days = End Date - Start Date + 1
+    const days = diffDays + 1;
+    return days * dsaRate.rate;
+  }
+};
+
 export default function TravelApplyPage() {
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { user, token, settings } = useAuth();
   const [requests, setRequests] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
-  const [step, setStep] = useState(1);
   const [notice, setNotice] = useState({ open: false, title: '', description: '' });
   const [submittedRequestId, setSubmittedRequestId] = useState(null);
+
+  // Auto-populate designation from user profile
+  useEffect(() => {
+    console.log('User object:', user);
+    console.log('User designation:', user?.designation);
+    if (user?.designation) {
+      setForm(prev => ({ ...prev, designation: user.designation }));
+      console.log('Designation set to:', user.designation);
+    } else {
+      console.log('No designation found for user');
+    }
+  }, [user?.designation]);
+
+  // Auto-calculate DSA when relevant fields change
+  useEffect(() => {
+    console.log('DSA Calculation Trigger:', { 
+      designation: form.designation, 
+      travelCategory: form.travelCategory, 
+      travelTypeDetail: form.travelTypeDetail, 
+      startDate: form.startDate, 
+      endDate: form.endDate 
+    });
+
+    if (form.designation && form.travelCategory && form.startDate && form.endDate) {
+      // For East Africa and International, travelTypeDetail is not needed
+      const needsTravelType = form.travelCategory === 'Within Kenya';
+      const hasRequiredFields = needsTravelType ? form.travelTypeDetail : true;
+
+      console.log('DSA Calculation logic:', { needsTravelType, hasRequiredFields });
+
+      if (hasRequiredFields) {
+        const dsaRate = getDSARate(form.designation, form.travelCategory, form.travelTypeDetail);
+        console.log('DSA Rate Result:', dsaRate);
+        
+        if (dsaRate) {
+          const dsaAmount = calculateDSAAmount(form.startDate, form.endDate, dsaRate, form.travelTypeDetail);
+          console.log('DSA Amount Result:', dsaAmount);
+          
+          setForm(prev => ({
+            ...prev,
+            dsaRate: dsaRate.rate,
+            dsaCurrency: dsaRate.currency,
+            dsaAmount: dsaAmount
+          }));
+        } else {
+          console.log('No DSA rate found, clearing fields');
+          setForm(prev => ({
+            ...prev,
+            dsaRate: '',
+            dsaCurrency: 'KES',
+            dsaAmount: ''
+          }));
+        }
+      }
+    }
+  }, [form.designation, form.travelCategory, form.travelTypeDetail, form.startDate, form.endDate]);
+
+  // Reset travel type detail when category changes
+  useEffect(() => {
+    if (form.travelCategory && form.travelCategory !== 'Within Kenya') {
+      setForm(prev => ({ ...prev, travelTypeDetail: '' }));
+    }
+  }, [form.travelCategory]);
 
   useEffect(() => {
     fetchTravelRequests()
@@ -105,7 +251,14 @@ export default function TravelApplyPage() {
         destination: form.destination,
         reason: form.reason,
         estimatedCost: form.estimatedCost ? Number(form.estimatedCost) : null,
-        currency: form.currency
+        currency: form.currency,
+        designation: form.designation,
+        travelCategory: form.travelCategory,
+        travelTypeDetail: form.travelTypeDetail,
+        projectProgramme: form.projectProgramme,
+        dsaRate: form.dsaRate ? Number(form.dsaRate) : null,
+        dsaCurrency: form.dsaCurrency,
+        dsaAmount: form.dsaAmount ? Number(form.dsaAmount) : null
       };
 
       let request;
@@ -158,7 +311,7 @@ export default function TravelApplyPage() {
         description: 'Your travel request has been submitted successfully.'
       });
       setForm(initialForm);
-      setStep(1);
+      setTimeout(() => navigate('/travel/official'), 2000);
     } catch (error) {
       setNotice({
         open: true,
@@ -173,56 +326,65 @@ export default function TravelApplyPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Apply for Travel"
-        subtitle="Submit a new travel request with your travel details and estimated cost."
+        title="Official Travel Booking"
+        subtitle="Plan official travel with automatic DSA calculation. Transportation costs are optional."
         actions={[
-          <button key="back" type="button" onClick={() => navigate('/travel')} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-            Back to travel dashboard
+          <button key="back" type="button" onClick={() => navigate('/travel/official')} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
+            Back to Official Travel
           </button>
         ]}
       />
 
-      <SectionCard title="Travel request form" subtitle="Enter your travel details including dates, route, reason, and estimated cost.">
-        {step === 1 ? (
-          <div className="space-y-6">
-            <p className="text-center text-lg font-medium text-slate-900">What type of travel request would you like to submit?</p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({ ...initialForm, travelType: 'booking' });
-                  setStep(2);
-                }}
-                className="flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white p-4 text-left transition-all hover:border-emerald-500 hover:bg-emerald-50"
+      <SectionCard title="Official Travel Booking Form" subtitle="Enter your travel details including dates, route, and reason. DSA will be calculated automatically.">
+        <form className="space-y-5" onSubmit={handleSubmit}>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Travel Category</label>
+              <select
+                value={form.travelCategory}
+                onChange={(event) => setForm((current) => ({ ...current, travelCategory: event.target.value }))}
+                className="bg-slate-50"
+                required
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                  <Upload size={24} />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">Travel Booking</p>
-                  <p className="mt-1 text-xs text-slate-500">Book travel for upcoming trips</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({ ...initialForm, travelType: 'reimbursement' });
-                  setStep(2);
-                }}
-                className="flex cursor-pointer items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white p-4 text-left transition-all hover:border-emerald-500 hover:bg-emerald-50"
+                <option value="">Select travel category</option>
+                <option value="Within Kenya">Within Kenya</option>
+                <option value="East Africa">East Africa</option>
+                <option value="International">International</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Project / Programme / Activity</label>
+              <select
+                value={form.projectProgramme}
+                onChange={(event) => setForm((current) => ({ ...current, projectProgramme: event.target.value }))}
+                className="bg-slate-50"
+                required
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                  <Upload size={24} />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">Reimbursement</p>
-                  <p className="mt-1 text-xs text-slate-500">Request reimbursement for travel already taken</p>
-                </div>
-              </button>
+                <option value="">Select project/programme</option>
+                {(settings?.travel?.projects || ['CWF', 'KEREA', 'WRI', 'CLASP', 'GIZ', 'GOGLA']).map((project) => (
+                  <option key={project} value={project}>{project}</option>
+                ))}
+              </select>
             </div>
           </div>
-        ) : (
-          <form className="space-y-5" onSubmit={handleSubmit}>
+
+          {/* Travel Type Detail (only for Within Kenya) */}
+          {form.travelCategory === 'Within Kenya' && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Travel Type</label>
+              <select
+                value={form.travelTypeDetail}
+                onChange={(event) => setForm((current) => ({ ...current, travelTypeDetail: event.target.value }))}
+                className="bg-slate-50"
+                required
+              >
+                <option value="">Select travel type</option>
+                <option value="Official Overnight Travel">Official Overnight Travel</option>
+                <option value="Official Day Travel">Official Day Travel</option>
+              </select>
+            </div>
+          )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
@@ -277,16 +439,22 @@ export default function TravelApplyPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">Estimated cost (optional)</label>
-              <input
-                type="number"
-                className="bg-slate-50"
-                placeholder="e.g., 50000"
-                value={form.estimatedCost}
-                onChange={(event) => setForm((current) => ({ ...current, estimatedCost: event.target.value }))}
-                min="0"
-                step="0.01"
-              />
+              <label className="mb-2 block text-sm font-medium text-slate-700">Estimated Transportation Cost (Optional)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  {form.currency === 'KES' ? 'KES' : form.currency}
+                </span>
+                <input
+                  type="number"
+                  className="bg-slate-50 pl-16"
+                  placeholder="e.g., 50000"
+                  value={form.estimatedCost}
+                  onChange={(event) => setForm((current) => ({ ...current, estimatedCost: event.target.value }))}
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Transportation costs only (separate from DSA)</p>
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Currency</label>
@@ -318,6 +486,49 @@ export default function TravelApplyPage() {
               </select>
             </div>
           </div>
+
+          {/* DSA Section - appears right after estimated transportation cost */}
+          {form.dsaRate && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <h4 className="mb-3 flex items-center gap-2 font-semibold text-emerald-900">
+                <DollarSign size={18} />
+                DSA (Daily Subsistence Allowance)
+              </h4>
+              <p className="mb-3 text-xs text-emerald-700">Covers accommodation, meals, and incidental costs</p>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Applicable Rate:</span>
+                  <span className="font-medium text-slate-900">
+                    {form.dsaCurrency} {form.dsaRate?.toLocaleString()} {getDSARate(form.designation, form.travelCategory, form.travelTypeDetail)?.unit || ''}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Number of {form.travelTypeDetail === 'Official Overnight Travel' ? 'Nights' : 'Days'}:</span>
+                  <span className="font-medium text-slate-900">
+                    {form.startDate && form.endDate ? (
+                      form.travelTypeDetail === 'Official Overnight Travel' 
+                        ? Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / (1000 * 60 * 60 * 24))
+                        : Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / (1000 * 60 * 60 * 24)) + 1
+                    ) : 0}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-emerald-200 pt-2">
+                  <span className="font-semibold text-slate-900">Total DSA:</span>
+                  <span className="font-semibold text-emerald-700">
+                    {form.dsaCurrency} {form.dsaAmount?.toLocaleString() || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!form.dsaRate && form.designation && form.travelCategory && (form.travelCategory !== 'Within Kenya' || form.travelTypeDetail) && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-800">
+                ⚠️ Select travel dates to calculate DSA
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">Reason for travel</label>
@@ -386,7 +597,7 @@ export default function TravelApplyPage() {
           )}
 
           <div className="flex flex-wrap justify-end gap-3">
-            <button type="button" className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700" onClick={() => setStep(1)}>
+            <button type="button" className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700" onClick={() => navigate('/travel/official')}>
               Back
             </button>
             <button type="submit" disabled={submitting} className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg disabled:opacity-60">
@@ -394,7 +605,6 @@ export default function TravelApplyPage() {
             </button>
           </div>
         </form>
-        )}
       </SectionCard>
 
       <Modal
