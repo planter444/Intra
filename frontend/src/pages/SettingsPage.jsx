@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Trash2, Sparkles } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
@@ -73,6 +73,7 @@ export default function SettingsPage() {
   const isAdmin = user?.role === 'admin';
   const isCeoOnly = user?.role === 'ceo';
   const isFinanceOnly = user?.role === 'finance';
+  const isItOfficer = user?.role === 'admin';
   const availablePages = isCeoOnly
     ? [
         ['employees', 'Employees Page'],
@@ -102,7 +103,8 @@ export default function SettingsPage() {
         ['kpi', 'KPI Matrix Page'],
         ['performance', 'Performance Dashboard'],
         ['leaves_cleanup', 'Delete Leave Requests'],
-        ['travel', 'Travel Settings']
+        ['travel', 'Travel Settings'],
+        ['timesheet', 'Timesheet Settings']
       ];
   const [draft, setDraft] = useState(() => clone(settings || {}));
   const [message, setMessage] = useState('');
@@ -175,7 +177,7 @@ export default function SettingsPage() {
     [draft.kpi?.matrix, draft.kpi?.records]
   );
   const kpiEmployees = useMemo(
-    () => [...users].sort((left, right) => left.fullName.localeCompare(right.fullName)),
+    () => [...(users || [])].sort((left, right) => left.fullName.localeCompare(right.fullName)),
     [users]
   );
   const selectedKpiEmployee = useMemo(
@@ -199,12 +201,12 @@ export default function SettingsPage() {
   );
 
   useEffect(() => {
-    if (!kpiEmployees.length) {
+    if (!kpiEmployees?.length) {
       setSelectedKpiEmployeeId('');
       return;
     }
 
-    if (!kpiEmployees.some((employee) => String(employee.id) === String(selectedKpiEmployeeId))) {
+    if (!kpiEmployees?.some((employee) => String(employee.id) === String(selectedKpiEmployeeId))) {
       setSelectedKpiEmployeeId(String(kpiEmployees[0].id));
     }
   }, [kpiEmployees, selectedKpiEmployeeId]);
@@ -256,7 +258,14 @@ export default function SettingsPage() {
           ...(current.kpi || {}),
           records: {
             ...(current.kpi?.records || {}),
-            [employeeId]: serializeKpiEntry(nextEntry)
+            [employeeId]: {
+              ...serializeKpiEntry(nextEntry),
+              audit: {
+                lastModifiedBy: user?.id,
+                lastModifiedByName: user?.fullName,
+                lastModifiedAt: new Date().toISOString()
+              }
+            }
           }
         }
       };
@@ -794,7 +803,7 @@ export default function SettingsPage() {
           defaultMobileUrl: String(draft.interface?.backgrounds?.redesigned?.defaultMobileUrl || draft.interface?.backgrounds?.redesigned?.defaultImageUrl || ''),
           perPage: Object.fromEntries(['dashboard','employees','profile','documents','leave','settings','audit','kpi','performance','travel','leaveReport','payslips'].map((k) => {
             const raw = (draft.interface?.backgrounds?.redesigned?.perPage || {})[k];
-            const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(asObj.mobile || '').trim() };
+            const asObj = typeof raw === 'object' && raw ? raw : { desktop: String(raw || '').trim(), mobile: String(raw || '').trim() };
             return [k, { desktop: String(asObj.desktop || '').trim(), mobile: String(asObj.mobile || '').trim() }];
           }))
         },
@@ -843,6 +852,9 @@ export default function SettingsPage() {
       return accumulator;
     }, {});
     const normalizedKpiMatrix = Object.entries(normalizedKpiRecords).reduce((accumulator, [employeeId, entry]) => {
+      if (!entry.indicators || !Array.isArray(entry.indicators)) {
+        return accumulator;
+      }
       accumulator[employeeId] = Array.from({ length: entry.indicators.length }, (_, index) => ({
         [`k${index + 1}`]: entry.indicators[index]?.score ?? ''
       })).reduce((scores, item) => ({ ...scores, ...item }), {});
@@ -1699,8 +1711,334 @@ export default function SettingsPage() {
         </SectionCard>
       ) : null}
 
+      {activePage === 'timesheet' ? (
+        <div className="space-y-6">
+          {isItOfficer && (
+            <SectionCard title="Timesheet Routing" subtitle="Configure where each employee's timesheet should be sent for approval.">
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500">Select the supervisor who should approve each employee's timesheet. You can also set a default supervisor.</p>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <label className="text-sm font-medium text-slate-700 w-48">Default Supervisor:</label>
+                    <select
+                      value={draft.timesheet?.routing?.default || ''}
+                      onChange={(e) => setDraft((current) => ({
+                        ...current,
+                        timesheet: {
+                          ...(current.timesheet || {}),
+                          routing: {
+                            ...(current.timesheet?.routing || {}),
+                            default: e.target.value
+                          }
+                        }
+                      }))}
+                      className="flex-1 max-w-md px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">No default</option>
+                      {kpiEmployees?.map((employee) => (
+                        <option key={employee.id} value={String(employee.id)}>
+                          {employee.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="border-t border-slate-200 pt-4">
+                    <h4 className="text-sm font-medium text-slate-700 mb-3">Employee-Specific Routing</h4>
+                    <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                      {kpiEmployees?.map((employee) => (
+                        <div key={employee.id} className="flex items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-0">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-slate-900">{employee.fullName}</div>
+                            <div className="text-xs text-slate-500">{employee.positionTitle || employee.roleTitle || 'No designation'}</div>
+                          </div>
+                          <select
+                            value={draft.timesheet?.routing?.[String(employee.id)] || ''}
+                            onChange={(e) => setDraft((current) => ({
+                              ...current,
+                              timesheet: {
+                                ...(current.timesheet || {}),
+                                routing: {
+                                  ...(current.timesheet?.routing || {}),
+                                  [String(employee.id)]: e.target.value
+                                }
+                              }
+                            }))}
+                            className="w-48 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="">Use default</option>
+                            {kpiEmployees?.map((supervisor) => (
+                              <option key={supervisor.id} value={String(supervisor.id)}>
+                                {supervisor.fullName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard title="Timesheet Partners" subtitle="Configure the available partners for timesheet hour allocation.">
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">Add or remove partners that employees can select when allocating their daily hours.</p>
+              <div className="flex flex-wrap gap-2">
+                {(draft.timesheet?.partners || ['GIZ', 'CWF', 'Gogla', 'SNV']).map((partner, index) => (
+                  <div key={index} className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+                    <span className="text-sm font-medium text-slate-900">{partner}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const partners = [...(draft.timesheet?.partners || ['GIZ', 'CWF', 'Gogla', 'SNV'])];
+                        partners.splice(index, 1);
+                        setDraft((current) => ({
+                          ...current,
+                          timesheet: {
+                            ...(current.timesheet || {}),
+                            partners
+                          }
+                        }));
+                      }}
+                      className="text-slate-500 hover:text-rose-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Add new partner..."
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      const partners = [...(draft.timesheet?.partners || ['GIZ', 'CWF', 'Gogla', 'SNV'])];
+                      if (!partners.includes(e.target.value.trim())) {
+                        partners.push(e.target.value.trim());
+                        setDraft((current) => ({
+                          ...current,
+                          timesheet: {
+                            ...(current.timesheet || {}),
+                            partners
+                          }
+                        }));
+                      }
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const input = e.target.previousElementSibling;
+                    if (input.value.trim()) {
+                      const partners = [...(draft.timesheet?.partners || ['GIZ', 'CWF', 'Gogla', 'SNV'])];
+                      if (!partners.includes(input.value.trim())) {
+                        partners.push(input.value.trim());
+                        setDraft((current) => ({
+                          ...current,
+                          timesheet: {
+                            ...(current.timesheet || {}),
+                            partners
+                          }
+                        }));
+                      }
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Timesheet Supervisors" subtitle="Configure additional users who can approve timesheets (in addition to admin and CEO).">
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">Select employees who should have permission to approve timesheets.</p>
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                {kpiEmployees?.map((employee) => (
+                  <label key={employee.id} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={draft.timesheet?.supervisors?.includes(String(employee.id)) || false}
+                      onChange={(e) => {
+                        const supervisors = draft.timesheet?.supervisors || [];
+                        const newSupervisors = e.target.checked
+                          ? [...supervisors, String(employee.id)]
+                          : supervisors.filter((id) => id !== String(employee.id));
+                        setDraft((current) => ({
+                          ...current,
+                          timesheet: {
+                            ...(current.timesheet || {}),
+                            supervisors: newSupervisors
+                          }
+                        }));
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">{employee.fullName}</div>
+                      <div className="text-xs text-slate-500">{employee.positionTitle || employee.roleTitle || 'No designation'}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+        </div>
+      ) : null}
+
       {activePage === 'kpi' ? (
         <div className="space-y-6">
+          {isItOfficer && (
+            <>
+              <SectionCard title="KPI Data Management" subtitle="IT Officer Only - Seed random KPI data for all employees.">
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white hover:opacity-90"
+                    onClick={async () => {
+                      if (confirm('This will seed KPI data for all employees with random core roles and indicators. This action cannot be undone. Continue?')) {
+                        try {
+                          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/settings/seed-kpi`, {
+                            method: 'POST',
+                            headers: {
+                              'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            }
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                          }
+                        } catch (error) {
+                          alert('Failed to seed KPI data');
+                        }
+                      }
+                    }}
+                  >
+                    <Sparkles size={16} /> Seed KPI Data
+                  </button>
+                  <p className="text-sm text-slate-500">This will generate ~5 core roles and ~5 KPI indicators with random scores (60-100) for each employee.</p>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="KPI Editor Permissions" subtitle="IT Officer Only - Manage who can edit KPIs.">
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-500">Select employees who should have permission to edit KPIs (in addition to admin, CEO, and finance roles).</p>
+                  <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                    {kpiEmployees?.map((employee) => (
+                      <label key={employee.id} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={draft.kpi?.editors?.includes(String(employee.id)) || false}
+                          onChange={(e) => {
+                            const currentEditors = draft.kpi?.editors || [];
+                            const newEditors = e.target.checked
+                              ? [...currentEditors, String(employee.id)]
+                              : currentEditors.filter((id) => id !== String(employee.id));
+                            setDraft((current) => ({
+                              ...current,
+                              kpi: {
+                                ...(current.kpi || {}),
+                                editors: newEditors
+                              }
+                            }));
+                          }}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">{employee.fullName}</div>
+                          <div className="text-xs text-slate-500">{employee.positionTitle || employee.roleTitle || 'No designation'}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </SectionCard>
+            </>
+          )}
+
+          <SectionCard title="Performance Band Settings" subtitle="Configure score ranges for performance bands (e.g., 0-10 = Needs Assistance, 10-20 = Developing, etc.).">
+            <div className="space-y-4">
+              {Object.entries(performanceBands).map(([bandKey, band]) => (
+                <div key={bandKey} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <label className="text-sm font-medium text-slate-900 capitalize">{band.label || bandKey}</label>
+                    <input
+                      type="number"
+                      className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                      value={band.minScore || 0}
+                      onChange={(e) => setPerformanceBandField(bandKey, 'minScore', e.target.value)}
+                      min="0"
+                      max="100"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">Minimum score for this performance band</p>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="KPI Assessment Settings" subtitle="Configure the default assessment frequency for KPI evaluations.">
+            <div className="max-w-md">
+              <label className="mb-2 block text-sm font-medium text-slate-700">Assessment Frequency</label>
+              <select
+                value={draft.kpi?.frequency || 'quarterly'}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  kpi: {
+                    ...(current.kpi || {}),
+                    frequency: event.target.value
+                  }
+                }))}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="halfYearly">Half-Yearly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+              <p className="mt-2 text-sm text-slate-500">This frequency will be used as the default for KPI assessment periods.</p>
+            </div>
+          </SectionCard>
+
+          {user?.role === 'ceo' && (
+            <SectionCard title="KPI Assessment Locking" subtitle="Lock or unlock KPI assessments to prevent further modifications. Only the CEO can lock assessments.">
+              <div className="space-y-4">
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={draft.kpi?.locked === true}
+                    onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  kpi: {
+                    ...(current.kpi || {}),
+                    locked: event.target.checked
+                  }
+                }))}
+                  />
+                  <span>
+                    <span className="block font-semibold text-slate-900">Lock KPI Assessments</span>
+                    <span className="mt-1 block text-xs text-slate-500">When locked, KPI scores cannot be modified by any user including the CEO. This is typically done at the end of an assessment period.</span>
+                  </span>
+                </label>
+                {draft.kpi?.locked && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-sm font-medium text-amber-800">KPI assessments are currently locked</p>
+                    <p className="text-xs text-amber-600">Uncheck the box above to allow modifications to KPI scores.</p>
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+          )}
+
           <SectionCard title="Employees" subtitle="Choose an employee to set their core roles, KPI description, and scores.">
             <div className="max-w-md">
               <label className="mb-2 block text-sm font-medium text-slate-700">Select Employee</label>
@@ -1709,7 +2047,7 @@ export default function SettingsPage() {
                 onChange={(event) => setSelectedKpiEmployeeId(event.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 focus:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100"
               >
-                {kpiEmployees.length ? kpiEmployees.map((employee) => {
+                {kpiEmployees?.length ? kpiEmployees.map((employee) => {
                   const employeeEntry = getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {});
                   const employeeAverage = getAverageKpiScore(employeeEntry);
                   return (
@@ -1728,6 +2066,10 @@ export default function SettingsPage() {
           >
             {!selectedKpiEmployee ? (
               <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-sm text-slate-500">Select an employee above to begin editing KPI details.</div>
+            ) : draft.kpi?.locked ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-10 text-sm text-amber-600">
+                KPI assessments are currently locked. Contact the CEO to unlock for modifications.
+              </div>
             ) : (
               <div className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-3">
@@ -1791,7 +2133,7 @@ export default function SettingsPage() {
         <div className="space-y-6">
           <SectionCard title="Performance dashboard content" subtitle="The performance dashboard reflects the saved KPI records for each employee.">
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
-              <StatCard title="Employees ready" value={kpiEmployees.filter((employee) => getAverageKpiScore(getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {})) !== null).length} helper="Employees with at least one KPI score saved" accent="from-emerald-700 to-green-500" />
+              <StatCard title="Employees ready" value={kpiEmployees?.filter((employee) => getAverageKpiScore(getNormalizedKpiEntry(draft.kpi?.records?.[String(employee.id)] || draft.kpi?.matrix?.[String(employee.id)] || {})) !== null).length || 0} helper="Employees with at least one KPI score saved" accent="from-emerald-700 to-green-500" />
               <StatCard title="KPI records" value={Object.keys(kpiRecordSource).length} helper="Employee records available to display" accent="from-sky-700 to-cyan-500" />
               <StatCard title="Editable roles" value="CEO, IT Officer, Finance" helper="People who can update KPI content" accent="from-violet-700 to-fuchsia-500" />
             </div>
