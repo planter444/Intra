@@ -43,7 +43,10 @@ const mapTravelRequest = (row) => ({
   dsaCurrency: row.dsa_currency || 'KES',
   dsaAmount: row.dsa_amount ? Number(row.dsa_amount) : null,
   dsaProvided: row.dsa_provided || false,
-  referenceNumber: row.reference_number || null
+  referenceNumber: row.reference_number || null,
+  accommodationRate: row.accommodation_rate ? Number(row.accommodation_rate) : null,
+  accommodationCurrency: row.accommodation_currency || 'KES',
+  accommodationAmount: row.accommodation_amount ? Number(row.accommodation_amount) : null
 });
 
 const generateReferenceNumber = async () => {
@@ -62,7 +65,7 @@ const generateReferenceNumber = async () => {
   return `KEREA-TRV-${year}-${sequence}`;
 };
 
-const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided }) => {
+const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount }) => {
   const referenceNumber = await generateReferenceNumber();
   
   let result;
@@ -88,13 +91,16 @@ const createTravelRequest = async ({ userId, travelType, startDate, endDate, ori
           dsa_currency,
           dsa_amount,
           dsa_provided,
+          accommodation_rate,
+          accommodation_currency,
+          accommodation_amount,
           reference_number,
           status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 'pending')
         RETURNING id
       `,
-      [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null, designation || null, travelCategory || null, travelTypeDetail || null, projectProgramme || null, dsaRate || null, dsaCurrency || 'KES', dsaAmount || null, dsaProvided || false, referenceNumber]
+      [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null, designation || null, travelCategory || null, travelTypeDetail || null, projectProgramme || null, dsaRate || null, dsaCurrency || 'KES', dsaAmount || null, dsaProvided || false, accommodationRate || null, accommodationCurrency || 'KES', accommodationAmount || null, referenceNumber]
     );
   } catch (error) {
     console.error('Travel request insert error:', error.message);
@@ -251,24 +257,79 @@ const updateTravelRequestStatus = async ({ id, status, approvedBy, rejectionReas
   return findTravelRequestById(id);
 };
 
-const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, destination, reason, estimatedCost }) => {
-  await query(
-    `
-      UPDATE travel_requests
-      SET
-        start_date = COALESCE($2, start_date),
-        end_date = COALESCE($3, end_date),
-        origin = COALESCE($4, origin),
-        destination = COALESCE($5, destination),
-        reason = COALESCE($6, reason),
-        estimated_cost = COALESCE($7, estimated_cost),
-        updated_at = NOW()
-      WHERE id = $1
-    `,
-    [id, startDate, endDate, origin, destination, reason, estimatedCost]
-  );
+const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount }) => {
+  let result;
+  console.log('MODEL UPDATE - Received params:', {
+    id,
+    dsaAmount,
+    accommodationAmount,
+    projectProgramme,
+    travelCategory
+  });
+  
+  try {
+    result = await query(
+      `
+        UPDATE travel_requests
+        SET
+          start_date = $2,
+          end_date = $3,
+          origin = $4,
+          destination = $5,
+          reason = $6,
+          estimated_cost = $7,
+          designation = $8,
+          travel_category = $9,
+          travel_type_detail = $10,
+          project_programme = $11,
+          dsa_rate = $12,
+          dsa_currency = $13,
+          dsa_amount = $14,
+          accommodation_rate = $15,
+          accommodation_currency = $16,
+          accommodation_amount = $17,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount]
+    );
+    console.log('MODEL UPDATE - Query executed successfully, rows affected:', result.rowCount);
+  } catch (error) {
+    console.error('Travel request update error:', error.message);
+    // If new columns don't exist, retry with basic columns
+    console.warn('Retrying travel request update with basic columns');
+    try {
+      result = await query(
+        `
+          UPDATE travel_requests
+          SET
+            start_date = $2,
+            end_date = $3,
+            origin = $4,
+            destination = $5,
+            reason = $6,
+            estimated_cost = $7,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [id, startDate, endDate, origin, destination, reason, estimatedCost]
+      );
+      console.log('MODEL UPDATE - Fallback query executed');
+    } catch (fallbackError) {
+      console.error('Fallback travel request update also failed:', fallbackError.message);
+      throw fallbackError;
+    }
+  }
 
-  return findTravelRequestById(id);
+  const updated = await findTravelRequestById(id);
+  console.log('MODEL UPDATE - Updated request:', {
+    dsaAmount: updated.dsaAmount,
+    accommodationAmount: updated.accommodationAmount,
+    projectProgramme: updated.projectProgramme,
+    travelCategory: updated.travelCategory
+  });
+  
+  return updated;
 };
 
 const cancelTravelRequest = async (id) => updateTravelRequestStatus({ id, status: 'cancelled' });

@@ -89,7 +89,7 @@ const getTravelRequest = async (req, res, next) => {
 
 const createTravelRequest = async (req, res, next) => {
   try {
-    const { travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided } = req.body;
+    const { travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount } = req.body;
 
     if (!startDate || !endDate || !origin || !destination || !reason) {
       return res.status(400).json({ message: 'Start date, end date, origin, destination, and reason are required.' });
@@ -158,7 +158,10 @@ const createTravelRequest = async (req, res, next) => {
         dsaRate: dsaRate || null,
         dsaCurrency: dsaCurrency || 'KES',
         dsaAmount: dsaAmount || null,
-        dsaProvided: dsaProvided || false
+        dsaProvided: dsaProvided || false,
+        accommodationRate: accommodationRate || null,
+        accommodationCurrency: accommodationCurrency || 'KES',
+        accommodationAmount: accommodationAmount || null
       });
     } catch (dbError) {
       // If the error is about new columns not existing, retry without them
@@ -223,8 +226,15 @@ const createTravelRequest = async (req, res, next) => {
 const updateTravelRequest = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { startDate, endDate, origin, destination, reason, estimatedCost } = req.body;
+    const { startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount } = req.body;
     const request = await travelModel.findTravelRequestById(id);
+
+    console.log('UPDATE REQUEST - Received:', {
+      dsaAmount,
+      accommodationAmount,
+      projectProgramme,
+      travelCategory
+    });
 
     if (!request) {
       return res.status(404).json({ message: 'Travel request not found.' });
@@ -242,15 +252,29 @@ const updateTravelRequest = async (req, res, next) => {
       }
     }
 
-    const updatedRequest = await travelModel.updateTravelRequestDetails({
+    const updateParams = {
       id,
       startDate: startDate || request.startDate,
       endDate: endDate || request.endDate,
       origin: origin || request.origin,
       destination: destination || request.destination,
       reason: reason ?? request.reason,
-      estimatedCost: estimatedCost !== undefined ? estimatedCost : request.estimatedCost
-    });
+      estimatedCost: estimatedCost !== undefined && estimatedCost !== '' ? Number(estimatedCost) : request.estimatedCost,
+      designation: designation && designation.trim() !== '' ? designation : null,
+      travelCategory: travelCategory ?? request.travelCategory,
+      travelTypeDetail: travelTypeDetail ?? request.travelTypeDetail,
+      projectProgramme: projectProgramme ?? request.projectProgramme,
+      dsaRate: dsaRate !== undefined ? Number(dsaRate) : request.dsaRate,
+      dsaCurrency: dsaCurrency ?? request.dsaCurrency,
+      dsaAmount: dsaAmount !== undefined ? Number(dsaAmount) : request.dsaAmount,
+      accommodationRate: accommodationRate !== undefined ? Number(accommodationRate) : request.accommodationRate,
+      accommodationCurrency: accommodationCurrency ?? request.accommodationCurrency,
+      accommodationAmount: accommodationAmount !== undefined ? Number(accommodationAmount) : request.accommodationAmount
+    };
+
+    console.log('UPDATE REQUEST - Sending to model:', updateParams);
+
+    const updatedRequest = await travelModel.updateTravelRequestDetails(updateParams);
 
     await logAction({
       actorUserId: req.user.id,

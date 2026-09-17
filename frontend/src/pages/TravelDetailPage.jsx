@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Upload, Download, X, Plus, Trash2, Edit2, Eye } from 'lucide-react';
+import { Upload, Download, X, Plus, Trash2, Edit2, Eye, DollarSign, Building2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import Modal from '../components/Modal';
@@ -52,7 +52,7 @@ const canUpdateReceiptStatus = (user, receipt) => {
 export default function TravelDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { user, token, settings } = useAuth();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState({ open: false, title: '', description: '' });
@@ -65,6 +65,31 @@ export default function TravelDetailPage() {
   const [approverForEmployee, setApproverForEmployee] = useState(null);
   const [supportingDocModal, setSupportingDocModal] = useState({ open: false, file: null });
 
+  // Calculate accommodation amount
+  const calculateAccommodationAmount = (startDate, endDate) => {
+    if (!startDate || !endDate) return 0;
+    const accommodationRate = settings?.travel?.accommodation?.rate || 4000;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    return nights * accommodationRate;
+  };
+
+  // Calculate DSA amount
+  const calculateDSAAmount = (startDate, endDate, dsaRate) => {
+    if (!startDate || !endDate || !dsaRate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const calculationBasis = settings?.travel?.dsa?.calculationBasis || 'nights';
+    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    
+    if (calculationBasis === 'nights') {
+      return diffDays * dsaRate;
+    } else {
+      return (diffDays + 1) * dsaRate;
+    }
+  };
+
   const loadRequest = async () => {
     try {
       setLoading(true);
@@ -76,7 +101,17 @@ export default function TravelDetailPage() {
         origin: data.origin,
         destination: data.destination,
         reason: data.reason,
-        estimatedCost: data.estimatedCost || ''
+        estimatedCost: data.estimatedCost || '',
+        designation: data.designation || '',
+        travelCategory: data.travelCategory || '',
+        travelTypeDetail: data.travelTypeDetail || '',
+        projectProgramme: data.projectProgramme || '',
+        dsaRate: data.dsaRate || '',
+        dsaCurrency: data.dsaCurrency || 'KES',
+        dsaAmount: data.dsaAmount || '',
+        accommodationRate: data.accommodationRate || '',
+        accommodationCurrency: data.accommodationCurrency || 'KES',
+        accommodationAmount: data.accommodationAmount || ''
       });
       
       // Load approver for this employee
@@ -104,7 +139,36 @@ export default function TravelDetailPage() {
 
   const handleUpdate = async () => {
     try {
-      await updateTravelRequest(id, editForm);
+      // Calculate DSA and accommodation amounts based on current dates
+      const dsaRate = request.dsaRate || settings?.travel?.dsa?.rate || 0;
+      const calculatedDSAAmount = calculateDSAAmount(editForm.startDate, editForm.endDate, dsaRate);
+      const accommodationRate = request.accommodationRate || settings?.travel?.accommodation?.rate || 4000;
+      const accommodationCurrency = request.accommodationCurrency || settings?.travel?.accommodation?.currency || 'KES';
+      const calculatedAccommodationAmount = calculateAccommodationAmount(editForm.startDate, editForm.endDate);
+      
+      const updateData = {
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        origin: editForm.origin,
+        destination: editForm.destination,
+        reason: editForm.reason,
+        estimatedCost: editForm.estimatedCost || null,
+        designation: editForm.designation,
+        travelCategory: editForm.travelCategory,
+        travelTypeDetail: editForm.travelTypeDetail,
+        projectProgramme: editForm.projectProgramme,
+        dsaRate: dsaRate,
+        dsaCurrency: request.dsaCurrency || 'KES',
+        dsaAmount: calculatedDSAAmount,
+        accommodationRate: accommodationRate,
+        accommodationCurrency: accommodationCurrency,
+        accommodationAmount: calculatedAccommodationAmount
+      };
+      
+      console.log('Sending update data:', updateData);
+      console.log('Calculated DSA:', calculatedDSAAmount, 'Calculated Accommodation:', calculatedAccommodationAmount);
+      
+      await updateTravelRequest(id, updateData);
       setEditMode(false);
       setNotice({
         open: true,
@@ -113,6 +177,7 @@ export default function TravelDetailPage() {
       });
       loadRequest();
     } catch (error) {
+      console.error('Update error:', error);
       setNotice({
         open: true,
         title: 'Unable to update request',
@@ -489,6 +554,96 @@ export default function TravelDetailPage() {
                 <textarea rows="3" className="bg-white" value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} />
               </div>
               
+              {/* Additional travel details */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Designation</label>
+                  <input type="text" className="bg-white" value={editForm.designation} onChange={(e) => setEditForm({ ...editForm, designation: e.target.value })} />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Travel Category</label>
+                  <select className="bg-white" value={editForm.travelCategory} onChange={(e) => setEditForm({ ...editForm, travelCategory: e.target.value })}>
+                    <option value="">Select travel category</option>
+                    <option value="Within Kenya">Within Kenya</option>
+                    <option value="East Africa">East Africa</option>
+                    <option value="International">International</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Project / Programme / Activity</label>
+                <select className="bg-white" value={editForm.projectProgramme} onChange={(e) => setEditForm({ ...editForm, projectProgramme: e.target.value })}>
+                  <option value="">Select project/programme</option>
+                  {(settings?.travel?.projects || ['CWF', 'KEREA', 'WRI', 'CLASP', 'GIZ', 'GOGLA']).map((project) => (
+                    <option key={project} value={project}>{project}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* DSA Calculation in Edit Mode */}
+              {request.dsaRate && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <h4 className="mb-2 flex items-center gap-2 font-semibold text-emerald-900">
+                    <DollarSign size={18} />
+                    DSA Calculation
+                  </h4>
+                  <div className="grid gap-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Rate:</span>
+                      <span className="font-medium text-slate-900">{request.dsaCurrency} {request.dsaRate.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Number of {settings?.travel?.dsa?.calculationBasis === 'nights' ? 'Nights' : 'Days'}:</span>
+                      <span className="font-medium text-slate-900">
+                        {editForm.startDate && editForm.endDate ? (
+                          settings?.travel?.dsa?.calculationBasis === 'nights'
+                            ? Math.ceil((new Date(editForm.endDate) - new Date(editForm.startDate)) / (1000 * 60 * 60 * 24))
+                            : Math.ceil((new Date(editForm.endDate) - new Date(editForm.startDate)) / (1000 * 60 * 60 * 24)) + 1
+                        ) : 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-emerald-200 pt-2">
+                      <span className="font-semibold text-slate-900">Total DSA:</span>
+                      <span className="font-semibold text-emerald-700">
+                        {request.dsaCurrency} {calculateDSAAmount(editForm.startDate, editForm.endDate, request.dsaRate).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Accommodation Calculation in Edit Mode */}
+              {settings?.travel?.accommodation?.enabled && (
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <h4 className="mb-2 flex items-center gap-2 font-semibold text-blue-900">
+                    <Building2 size={18} />
+                    Accommodation Calculation
+                  </h4>
+                  <div className="grid gap-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Rate per Night:</span>
+                      <span className="font-medium text-slate-900">
+                        {settings?.travel?.accommodation?.currency || 'KES'} {settings?.travel?.accommodation?.rate?.toLocaleString() || 4000}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Number of Nights:</span>
+                      <span className="font-medium text-slate-900">
+                        {editForm.startDate && editForm.endDate ? (
+                          Math.ceil((new Date(editForm.endDate) - new Date(editForm.startDate)) / (1000 * 60 * 60 * 24))
+                        ) : 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-blue-200 pt-2">
+                      <span className="font-semibold text-slate-900">Total Accommodation:</span>
+                      <span className="font-semibold text-blue-700">
+                        {settings?.travel?.accommodation?.currency || 'KES'} {calculateAccommodationAmount(editForm.startDate, editForm.endDate).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {request.travelType === 'booking' && (
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">Supporting Document</label>
@@ -633,6 +788,29 @@ export default function TravelDetailPage() {
                     <div className="flex justify-between">
                       <span className="text-slate-600">Total DSA:</span>
                       <span className="font-semibold text-emerald-700">{request.dsaCurrency} {request.dsaAmount.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {request.accommodationAmount && request.accommodationRate && (
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <h4 className="mb-2 font-semibold text-blue-900">Accommodation Calculation</h4>
+                  <div className="grid gap-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Rate per Night:</span>
+                      <span className="font-medium text-slate-900">{request.accommodationCurrency} {request.accommodationRate.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Number of Nights:</span>
+                      <span className="font-medium text-slate-900">
+                        {request.startDate && request.endDate ? (
+                          Math.ceil((new Date(request.endDate) - new Date(request.startDate)) / (1000 * 60 * 60 * 24))
+                        ) : 0}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Total Accommodation:</span>
+                      <span className="font-semibold text-blue-700">{request.accommodationCurrency} {request.accommodationAmount.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
