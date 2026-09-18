@@ -186,6 +186,7 @@ module.exports = {
     { code: 'addendum', label: 'Addendum' },
     { code: 'branding', label: 'Branding' },
     { code: 'profile', label: 'Profile Photos' },
+    { code: 'travel', label: 'Travel Documents' },
     { code: 'other', label: 'Other' }
   ],
   documentCategories: [
@@ -249,6 +250,31 @@ module.exports = {
       },
       assessmentFrequency: 'quarterly'
     }
+  },
+  travel: {
+    projects: ['CWF', 'KEREA', 'WRI', 'CLASP', 'GIZ', 'GOGLA'],
+    dsa: {
+      mode: 'standard',
+      calculationBasis: 'days',
+      kenyaRate: 2000,
+      kenyaCurrency: 'KES',
+      eastAfricaRate: 40,
+      eastAfricaCurrency: 'USD',
+      internationalRate: 50,
+      internationalCurrency: 'USD',
+      localMovementRate: 2000,
+      localMovementCurrency: 'KES',
+      applicableTo: ['all'],
+      description: 'Covers accommodation, meals, and incidental costs'
+    },
+    accommodation: {
+      enabled: true,
+      rate: 4000,
+      currency: 'KES',
+      description: 'Accommodation allowance per night',
+      applicableTo: ['all']
+    },
+    hotels: []
   },
   leaveTypes: [
     { code: 'annual', label: 'Annual Leave', defaultDays: 21, requiresCeoApproval: false, isPaid: true, requiresDocument: false, canCarryForward: true },

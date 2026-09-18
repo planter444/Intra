@@ -5,7 +5,8 @@ import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
-import { createTravelRequest } from '../services/travelService';
+import { createTravelRequest, updateTravelRequest } from '../services/travelService';
+import { uploadDocument } from '../services/documentService';
 import { fetchSettings } from '../services/settingsService';
 
 export default function LocalMovementBookingPage() {
@@ -27,7 +28,8 @@ export default function LocalMovementBookingPage() {
     currency: 'KES',
     reason: '',
     supportingDocuments: [],
-    referenceNumber: ''
+    referenceNumber: '',
+    fullDayEvent: false
   });
 
   useEffect(() => {
@@ -48,17 +50,44 @@ export default function LocalMovementBookingPage() {
     setLoading(true);
 
     try {
+      const baseCost = parseFloat(form.estimatedCost) || 0;
+      const dsaAmount = form.fullDayEvent ? (settings?.travel?.dsa?.localMovementRate || 2000) : 0;
+      const totalCost = baseCost + dsaAmount;
+
       const payload = {
         ...form,
         userId: user.id,
         travelCategory: 'Local Movement',
         startDate: form.travelDate,
         endDate: form.travelDate,
-        estimatedCost: parseFloat(form.estimatedCost) || 0,
-        supportingDocuments: documents.map(doc => doc.name)
+        estimatedCost: totalCost, // Store total cost for booking
+        transportationCost: baseCost, // Store transportation cost separately
+        dsaRate: form.fullDayEvent ? (settings?.travel?.dsa?.localMovementRate || 2000) : 0,
+        dsaCurrency: 'KES',
+        dsaAmount: dsaAmount,
+        accommodationRate: 0,
+        accommodationCurrency: 'KES',
+        accommodationAmount: 0,
+        fullDayEvent: form.fullDayEvent,
+        projectProgramme: form.projectProgramme || null // Convert empty string to null
       };
 
-      await createTravelRequest(payload);
+      const request = await createTravelRequest(payload);
+
+      // Upload supporting document after creating the request
+      if (documents.length > 0 && documents[0].file) {
+        try {
+          const document = await uploadDocument({
+            file: documents[0].file,
+            folderType: 'travel'
+          });
+          // Update the travel request with the supporting document ID
+          await updateTravelRequest(request.id, { supportingDocumentId: document.id });
+        } catch (docError) {
+          console.error('Failed to upload supporting document:', docError);
+        }
+      }
+
       setNotice({
         open: true,
         title: 'Local movement booking submitted',
@@ -82,7 +111,8 @@ export default function LocalMovementBookingPage() {
       id: Date.now() + Math.random(),
       file,
       name: file.name,
-      size: (file.size / 1024).toFixed(2) + ' KB'
+      size: file.size, // Send actual size in bytes
+      sizeDisplay: (file.size / 1024).toFixed(2) + ' KB' // For display only
     }));
     setDocuments([...documents, ...newDocuments]);
   };
@@ -206,6 +236,75 @@ export default function LocalMovementBookingPage() {
             />
           </div>
 
+          {/* Full Day Event Checkbox */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={form.fullDayEvent}
+                onChange={(e) => setForm((current) => ({ ...current, fullDayEvent: e.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-slate-900">Full day event</span>
+                <p className="mt-1 text-xs text-slate-600">
+                  {form.fullDayEvent
+                    ? `DSA of KES ${(settings?.travel?.dsa?.localMovementRate || 2000).toLocaleString()} will be added to the estimated cost.`
+                    : 'No DSA will be included. Only the estimated transportation cost.'}
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* DSA Calculation Display - Only show if full day event */}
+          {form.fullDayEvent && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                <DollarSign size={16} />
+                DSA (Daily Subsistence Allowance)
+              </h4>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Rate:</span>
+                  <span className="font-medium text-slate-900">KES {(settings?.travel?.dsa?.localMovementRate || 2000).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Total DSA:</span>
+                  <span className="font-semibold text-emerald-700">KES {(settings?.travel?.dsa?.localMovementRate || 2000).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Total Calculation Display */}
+          <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+            <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-purple-900">
+              <DollarSign size={16} />
+              Total Estimated Cost
+            </h4>
+            <div className="grid gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Estimated Transportation Cost:</span>
+                <span className="font-medium text-slate-900">KES {(parseFloat(form.estimatedCost) || 0).toLocaleString()}</span>
+              </div>
+              {form.fullDayEvent && (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">DSA:</span>
+                  <span className="font-medium text-slate-900">KES {(settings?.travel?.dsa?.localMovementRate || 2000).toLocaleString()}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-purple-200 pt-2">
+                <span className="font-semibold text-slate-900">Total:</span>
+                <span className="font-semibold text-purple-700">
+                  KES {(
+                    (parseFloat(form.estimatedCost) || 0) +
+                    (form.fullDayEvent ? (settings?.travel?.dsa?.localMovementRate || 2000) : 0)
+                  ).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+
           {/* Supporting Documents (Optional) */}
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">Supporting Documents (Optional)</label>
@@ -236,7 +335,7 @@ export default function LocalMovementBookingPage() {
                       <FileText size={16} className="text-slate-400" />
                       <div>
                         <p className="text-sm font-medium text-slate-900">{doc.name}</p>
-                        <p className="text-xs text-slate-500">{doc.size}</p>
+                        <p className="text-xs text-slate-500">{doc.sizeDisplay || (doc.size / 1024).toFixed(2) + ' KB'}</p>
                       </div>
                     </div>
                     <button

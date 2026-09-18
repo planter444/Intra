@@ -1,57 +1,132 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Upload, FileText, Trash2, Calendar, MapPin, DollarSign, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Upload, FileText, Trash2, Calendar, MapPin, DollarSign, CheckCircle, AlertCircle, Building2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SectionCard from '../components/SectionCard';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
-import { createTravelRequest } from '../services/travelService';
+import { createTravelRequest, uploadTravelReceipt } from '../services/travelService';
 import { fetchSettings } from '../services/settingsService';
 
 // DSA Rate Configuration
-const getDSARate = (designation, travelCategory, travelTypeDetail) => {
-  if (!designation || !travelCategory) return null;
+const getDSARate = (designation, travelCategory, travelTypeDetail, settings) => {
+  console.log('getDSARate called:', { designation, travelCategory, travelTypeDetail, settings });
+
+  if (!travelCategory) {
+    console.log('Missing travelCategory');
+    return null;
+  }
+
+  const dsaMode = settings?.travel?.dsa?.mode || 'standard';
+  const dsaSettings = settings?.travel?.dsa;
+  console.log('DSA Mode:', dsaMode);
+
+  // Standard DSA Mode - use admin-configured rates
+  if (dsaMode === 'standard') {
+    // Check if this designation is applicable to the configured rate
+    const applicableTo = dsaSettings?.applicableTo || ['all'];
+    const isApplicable = applicableTo.includes('all') || applicableTo.includes(designation?.toLowerCase().replace(/\s+/g, ''));
+
+    if (!isApplicable) {
+      console.log('Designation not applicable to standard DSA rate');
+      return null;
+    }
+
+    if (travelCategory === 'Within Kenya') {
+      return {
+        rate: dsaSettings?.kenyaRate || 2000,
+        currency: dsaSettings?.kenyaCurrency || 'KES',
+        unit: dsaSettings?.calculationBasis === 'nights' ? 'per night' : 'per day'
+      };
+    }
+
+    if (travelCategory === 'East Africa') {
+      return {
+        rate: dsaSettings?.eastAfricaRate || 40,
+        currency: dsaSettings?.eastAfricaCurrency || 'USD',
+        unit: dsaSettings?.calculationBasis === 'nights' ? 'per night' : 'per day'
+      };
+    }
+    
+    if (travelCategory === 'International') {
+      return { 
+        rate: dsaSettings?.internationalRate || 50, 
+        currency: dsaSettings?.internationalCurrency || 'USD', 
+        unit: dsaSettings?.calculationBasis === 'nights' ? 'per night' : 'per day' 
+      };
+    }
+    
+    return null;
+  }
+
+  // Designation-Based DSA Mode - use existing logic (kept for backward compatibility)
+  if (!designation) {
+    console.log('Missing designation for designation-based mode');
+    return null;
+  }
 
   // Normalize designation to handle case sensitivity and spacing
   const normalizedDesignation = designation.toLowerCase().replace(/\s+/g, '');
+  console.log('Normalized designation:', normalizedDesignation);
+
+  // Get the calculation basis from settings to determine the unit
+  const calculationBasis = settings?.travel?.dsa?.calculationBasis || 'days';
+  const unit = calculationBasis === 'nights' ? 'per night' : 'per day';
 
   // Within Kenya - Official Overnight Travel
   if (travelCategory === 'Within Kenya' && travelTypeDetail === 'Official Overnight Travel') {
     if (normalizedDesignation === 'fieldofficer') {
-      return { rate: 2500, currency: 'KES', unit: 'per night' };
+      console.log('Match: Field Officer - Within Kenya Overnight');
+      return { rate: 2000, currency: 'KES', unit };
     }
     if (normalizedDesignation === 'intern' || normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
-      return { rate: 4000, currency: 'KES', unit: 'per night' };
+      console.log('Match: Intern/Secretariat/Consultant - Within Kenya Overnight');
+      return { rate: 4000, currency: 'KES', unit };
     }
+    console.log('No match for Within Kenya Overnight');
     return null;
   }
 
   // Within Kenya - Official Day Travel
   if (travelCategory === 'Within Kenya' && travelTypeDetail === 'Official Day Travel') {
     if (normalizedDesignation === 'fieldofficer') {
-      return { rate: 1500, currency: 'KES', unit: 'per day' };
+      console.log('Match: Field Officer - Within Kenya Day');
+      return { rate: 1500, currency: 'KES', unit };
     }
     if (normalizedDesignation === 'intern' || normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
-      return { rate: 2000, currency: 'KES', unit: 'per day' };
+      console.log('Match: Intern/Secretariat/Consultant - Within Kenya Day');
+      return { rate: 2000, currency: 'KES', unit };
     }
+    console.log('No match for Within Kenya Day');
     return null;
   }
 
-  // East Africa - All designations
+  // East Africa - Secretariat and Consultant only
   if (travelCategory === 'East Africa') {
-    return { rate: 35, currency: 'USD', unit: 'per day' };
+    if (normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
+      console.log('Match: East Africa - Secretariat/Consultant');
+      return { rate: 35, currency: 'USD', unit };
+    }
+    console.log('No match for East Africa designation');
+    return null;
   }
 
-  // International - All designations
+  // International - Secretariat and Consultant only
   if (travelCategory === 'International') {
-    return { rate: 50, currency: 'USD', unit: 'per day' };
+    if (normalizedDesignation === 'secretariat' || normalizedDesignation === 'consultant') {
+      console.log('Match: International - Secretariat/Consultant');
+      return { rate: 50, currency: 'USD', unit };
+    }
+    console.log('No match for International designation');
+    return null;
   }
 
+  console.log('No match for travel category');
   return null;
 };
 
 // Calculate DSA amount based on dates and rate
-const calculateDSAAmount = (startDate, endDate, dsaRate, travelTypeDetail) => {
+const calculateDSAAmount = (startDate, endDate, dsaRate, travelTypeDetail, settings) => {
   if (!startDate || !endDate || !dsaRate) return 0;
 
   const start = new Date(startDate);
@@ -59,15 +134,33 @@ const calculateDSAAmount = (startDate, endDate, dsaRate, travelTypeDetail) => {
   const diffTime = end - start;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  if (travelTypeDetail === 'Official Overnight Travel') {
+  const calculationBasis = settings?.travel?.dsa?.calculationBasis || 'days';
+  console.log('Calculation basis:', calculationBasis);
+
+  if (calculationBasis === 'nights') {
     // Nights = End Date - Start Date
     const nights = diffDays;
+    console.log('Calculated nights:', nights);
     return nights * dsaRate.rate;
   } else {
     // Days = End Date - Start Date + 1
     const days = diffDays + 1;
+    console.log('Calculated days:', days);
     return days * dsaRate.rate;
   }
+};
+
+// Calculate accommodation amount based on nights
+const calculateAccommodationAmount = (startDate, endDate, accommodationRate) => {
+  if (!startDate || !endDate || !accommodationRate) return 0;
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = end - start;
+  const nights = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  console.log('Calculated accommodation nights:', nights);
+  return nights * accommodationRate;
 };
 
 export default function TravelReimbursementPage() {
@@ -90,10 +183,16 @@ export default function TravelReimbursementPage() {
     destination: '',
     estimatedCost: '',
     currency: 'KES',
-    dsaRate: '',
+    transportationCost: '',
+    transportationProvided: false,
+    dsaRate: 0,
     dsaCurrency: 'KES',
-    dsaAmount: '',
+    dsaAmount: 0,
     dsaProvided: false,
+    accommodationRate: 0,
+    accommodationCurrency: 'KES',
+    accommodationAmount: 0,
+    accommodationProvided: false,
     reason: '',
     supportingDocuments: [],
     referenceNumber: ''
@@ -107,34 +206,67 @@ export default function TravelReimbursementPage() {
     }
   }, [user?.designation]);
 
-  // Auto-calculate DSA when relevant fields change
+  // Auto-calculate DSA and accommodation when relevant fields change
   useEffect(() => {
-    if (form.designation && form.travelCategory && form.startDate && form.endDate) {
+    console.log('Calculation triggered:', { designation: form.designation, category: form.travelCategory, startDate: form.startDate, endDate: form.endDate, settings });
+
+    if (form.travelCategory && form.startDate && form.endDate) {
       const needsTravelType = form.travelCategory === 'Within Kenya';
       const hasRequiredFields = needsTravelType ? form.travelTypeDetail : true;
 
+      console.log('Has required fields:', hasRequiredFields);
+
       if (hasRequiredFields) {
-        const dsaRate = getDSARate(form.designation, form.travelCategory, form.travelTypeDetail);
-        
-        if (dsaRate) {
-          const dsaAmount = calculateDSAAmount(form.startDate, form.endDate, dsaRate, form.travelTypeDetail);
-          setForm(prev => ({
-            ...prev,
-            dsaRate: dsaRate.rate,
-            dsaCurrency: dsaRate.currency,
-            dsaAmount: dsaAmount
-          }));
-        } else {
-          setForm(prev => ({
-            ...prev,
-            dsaRate: '',
-            dsaCurrency: 'KES',
-            dsaAmount: ''
-          }));
+        // Calculate DSA
+        let dsaRateValue = 0;
+        let dsaCurrencyValue = 'KES';
+        let dsaAmountValue = 0;
+
+        if (form.travelCategory === 'Within Kenya') {
+          dsaRateValue = settings?.travel?.dsa?.kenyaRate || 2000;
+          dsaCurrencyValue = settings?.travel?.dsa?.kenyaCurrency || 'KES';
+        } else if (form.travelCategory === 'East Africa') {
+          dsaRateValue = settings?.travel?.dsa?.eastAfricaRate || 40;
+          dsaCurrencyValue = settings?.travel?.dsa?.eastAfricaCurrency || 'USD';
+        } else if (form.travelCategory === 'International') {
+          dsaRateValue = settings?.travel?.dsa?.internationalRate || 50;
+          dsaCurrencyValue = settings?.travel?.dsa?.internationalCurrency || 'USD';
         }
+
+        // Calculate days/nights
+        const start = new Date(form.startDate);
+        const end = new Date(form.endDate);
+        const diffTime = end - start;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const calculationBasis = settings?.travel?.dsa?.calculationBasis || 'days';
+
+        dsaAmountValue = calculationBasis === 'nights' ? diffDays * dsaRateValue : (diffDays + 1) * dsaRateValue;
+
+        console.log('DSA calculated:', { rate: dsaRateValue, currency: dsaCurrencyValue, amount: dsaAmountValue, days: diffDays });
+
+        setForm(prev => ({
+          ...prev,
+          dsaRate: dsaRateValue,
+          dsaCurrency: dsaCurrencyValue,
+          dsaAmount: dsaAmountValue
+        }));
+
+        // Calculate accommodation
+        const accommodationRateValue = settings?.travel?.accommodation?.rate || 4000;
+        const accommodationCurrencyValue = settings?.travel?.accommodation?.currency || 'KES';
+        const accommodationAmountValue = diffDays * accommodationRateValue;
+
+        console.log('Accommodation calculated:', { rate: accommodationRateValue, currency: accommodationCurrencyValue, amount: accommodationAmountValue, nights: diffDays });
+
+        setForm(prev => ({
+          ...prev,
+          accommodationRate: accommodationRateValue,
+          accommodationCurrency: accommodationCurrencyValue,
+          accommodationAmount: accommodationAmountValue
+        }));
       }
     }
-  }, [form.designation, form.travelCategory, form.travelTypeDetail, form.startDate, form.endDate]);
+  }, [form.travelCategory, form.travelTypeDetail, form.startDate, form.endDate, settings]);
 
   const loadSettings = async () => {
     try {
@@ -153,13 +285,32 @@ export default function TravelReimbursementPage() {
       const payload = {
         ...form,
         userId: user.id,
-        receipts: receipts,
         dsaAmount: parseFloat(form.dsaAmount) || 0,
         estimatedCost: parseFloat(form.estimatedCost) || 0,
-        dsaProvided: form.dsaProvided || false
+        transportationCost: parseFloat(form.transportationCost) || 0,
+        dsaProvided: form.dsaProvided || false,
+        accommodationAmount: parseFloat(form.accommodationAmount) || 0,
+        accommodationProvided: form.accommodationProvided || false
       };
 
-      await createTravelRequest(payload);
+      const request = await createTravelRequest(payload);
+
+      // Upload receipts after creating the request
+      if (receipts.length > 0) {
+        for (const receipt of receipts) {
+          if (receipt.file) {
+            try {
+              await uploadTravelReceipt({
+                receipt: receipt.file,
+                travelRequestId: request.id
+              });
+            } catch (receiptError) {
+              console.error('Failed to upload receipt:', receiptError);
+            }
+          }
+        }
+      }
+
       setNotice({
         open: true,
         title: 'Travel reimbursement submitted',
@@ -308,8 +459,40 @@ export default function TravelReimbursementPage() {
             </div>
           </div>
 
-          {/* DSA Provided Checkbox */}
-          {form.dsaAmount > 0 && (
+          {/* DSA Section - Always show when calculation is applicable */}
+          {form.travelCategory && form.startDate && form.endDate && (
+            <div className={`rounded-xl border p-4 ${form.dsaProvided ? 'border-slate-200 bg-slate-100' : 'border-emerald-200 bg-emerald-50'}`}>
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <DollarSign size={16} />
+                DSA (Daily Subsistence Allowance)
+                {form.dsaProvided && (
+                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                    Excluded from total
+                  </span>
+                )}
+              </h4>
+              <p className="mb-3 text-xs text-slate-600">
+                {form.dsaProvided
+                  ? 'DSA was provided during travel and will not be reimbursed.'
+                  : 'Covers accommodation, meals, and incidental costs - included in reimbursement.'}
+              </p>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Rate:</span>
+                  <span className="font-medium text-slate-900">{(form.dsaRate || 0).toLocaleString()} {form.dsaCurrency}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Total DSA:</span>
+                  <span className={`font-semibold ${form.dsaProvided ? 'text-slate-500 line-through' : 'text-emerald-700'}`}>
+                    {(form.dsaAmount || 0).toLocaleString()} {form.dsaCurrency}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DSA Provided Checkbox - Always show when DSA section is visible */}
+          {form.travelCategory && form.startDate && form.endDate && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <label className="flex cursor-pointer items-start gap-3">
                 <input
@@ -330,23 +513,78 @@ export default function TravelReimbursementPage() {
             </div>
           )}
 
+          {/* Accommodation Section - Always show when calculation is applicable */}
+          {form.travelCategory && form.startDate && form.endDate && (
+            <div className={`rounded-xl border p-4 ${form.accommodationProvided ? 'border-slate-200 bg-slate-100' : 'border-emerald-200 bg-emerald-50'}`}>
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <Building2 size={16} />
+                Accommodation Allowance
+                {form.accommodationProvided && (
+                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                    Excluded from total
+                  </span>
+                )}
+              </h4>
+              <p className="mb-3 text-xs text-slate-600">
+                {form.accommodationProvided
+                  ? 'Accommodation was provided during travel and will not be reimbursed.'
+                  : 'Accommodation allowance per night - included in reimbursement.'}
+              </p>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Rate:</span>
+                  <span className="font-medium text-slate-900">{(form.accommodationRate || 0).toLocaleString()} {form.accommodationCurrency}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Total Accommodation:</span>
+                  <span className={`font-semibold ${form.accommodationProvided ? 'text-slate-500 line-through' : 'text-emerald-700'}`}>
+                    {(form.accommodationAmount || 0).toLocaleString()} {form.accommodationCurrency}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Accommodation Provided Checkbox - Always show when accommodation section is visible */}
+          {form.travelCategory && form.startDate && form.endDate && settings?.travel?.accommodation?.enabled && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.accommodationProvided}
+                  onChange={(event) => setForm((current) => ({ ...current, accommodationProvided: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-900">Accommodation was provided during travel</span>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {form.accommodationProvided 
+                      ? 'Accommodation will be excluded from the total reimbursement amount.' 
+                      : 'Accommodation will be included in the total reimbursement amount.'}
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+
+
+
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">Total Cost for Reimbursement</label>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Transportation Cost Incurred (Optional)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                   {form.currency === 'KES' ? 'KES' : form.currency}
                 </span>
                 <input
                   type="number"
-                  value={form.estimatedCost}
-                  onChange={(event) => setForm((current) => ({ ...current, estimatedCost: event.target.value }))}
+                  value={form.transportationCost}
+                  onChange={(event) => setForm((current) => ({ ...current, transportationCost: event.target.value }))}
                   placeholder="0.00"
                   className="bg-slate-50 pl-16"
-                  required
                 />
               </div>
-              <p className="mt-1 text-xs text-slate-500">Total amount to be reimbursed (includes all expenses)</p>
+              <p className="mt-1 text-xs text-slate-500">Actual transportation expenses incurred during travel</p>
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">Currency</label>
@@ -362,37 +600,24 @@ export default function TravelReimbursementPage() {
             </div>
           </div>
 
-          {/* DSA Section */}
-          {form.dsaAmount > 0 && (
-            <div className={`rounded-xl border p-4 ${form.dsaProvided ? 'border-slate-200 bg-slate-100' : 'border-emerald-200 bg-emerald-50'}`}>
-              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <DollarSign size={16} />
-                DSA (Daily Subsistence Allowance)
-                {form.dsaProvided && (
-                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-                    Excluded from total
-                  </span>
-                )}
-              </h4>
-              <p className="mb-3 text-xs text-slate-600">
-                {form.dsaProvided 
-                  ? 'DSA was provided during travel and will not be reimbursed.' 
-                  : 'Covers accommodation, meals, and incidental costs - included in reimbursement.'}
-              </p>
-              <div className="grid gap-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Rate:</span>
-                  <span className="font-medium text-slate-900">{form.dsaRate} {form.dsaCurrency}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Total DSA:</span>
-                  <span className={`font-semibold ${form.dsaProvided ? 'text-slate-500 line-through' : 'text-emerald-700'}`}>
-                    {form.dsaAmount} {form.dsaCurrency}
-                  </span>
-                </div>
-              </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">Other Costs (Optional)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                {form.currency === 'KES' ? 'KES' : form.currency}
+              </span>
+              <input
+                type="number"
+                value={form.estimatedCost}
+                onChange={(event) => setForm((current) => ({ ...current, estimatedCost: event.target.value }))}
+                placeholder="0.00"
+                className="bg-slate-50 pl-16"
+              />
             </div>
-          )}
+            <p className="mt-1 text-xs text-slate-500">Any additional costs not covered by DSA, accommodation, or transportation. Leave blank if none.</p>
+          </div>
+
+
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">Reason for Travel</label>

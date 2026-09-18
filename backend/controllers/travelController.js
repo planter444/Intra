@@ -6,16 +6,23 @@ const { logAction } = require('../services/auditService');
 const { sendTravelRequestSubmittedEmail, sendTravelReceiptNotificationEmail, sendTravelDecisionEmail, buildTravelRequestUrl } = require('../services/mailService');
 const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolveDocumentPath, saveDocument } = require('../services/documentService');
 
-const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer'];
+const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
 
 const canViewOversightTravelData = (role) => oversightRoles.includes(role);
 
-const canAccessTravelRequest = (currentUser, request) => {
+const canAccessTravelRequest = async (currentUser, request) => {
   if (canViewOversightTravelData(currentUser.role)) {
     return true;
   }
 
   if (String(request.userId) === String(currentUser.id)) {
+    return true;
+  }
+
+  // Check if user has view-all access from settings
+  const notificationSettings = await travelModel.getTravelNotificationSettings();
+  const canViewAll = notificationSettings && notificationSettings.viewAllTravelRequestsIds && notificationSettings.viewAllTravelRequestsIds.includes(String(currentUser.id));
+  if (canViewAll) {
     return true;
   }
 
@@ -27,11 +34,16 @@ const canRequesterModify = (currentUser, request) => {
     return false;
   }
 
+  // Owner cannot modify if settled or approved
+  if (request.settled || request.status === 'approved') {
+    return false;
+  }
+
   return ['pending', 'rejected'].includes(request.status);
 };
 
 const canUpdateReceiptStatus = (currentUser, receipt) => {
-  if (currentUser.role === 'admin' || currentUser.role === 'ceo' || currentUser.role === 'finance') {
+  if (currentUser.role === 'admin' || currentUser.role === 'ceo' || currentUser.role === 'finance' || currentUser.role === 'administrator_and_membership_officer' || currentUser.positionTitle === 'Administration') {
     return true;
   }
 
@@ -60,6 +72,7 @@ const listTravelRequests = async (req, res, next) => {
     const requests = await travelModel.listTravelRequests({
       viewerId: req.user.id,
       role: req.user.role,
+      positionTitle: req.user.positionTitle,
       status: req.query.status
     });
 
@@ -76,7 +89,7 @@ const getTravelRequest = async (req, res, next) => {
       return res.status(404).json({ message: 'Travel request not found.' });
     }
 
-    if (!canAccessTravelRequest(req.user, request)) {
+    if (!(await canAccessTravelRequest(req.user, request))) {
       return res.status(403).json({ message: 'You do not have permission to view this travel request.' });
     }
 
@@ -89,7 +102,7 @@ const getTravelRequest = async (req, res, next) => {
 
 const createTravelRequest = async (req, res, next) => {
   try {
-    const { travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount } = req.body;
+    const { travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent } = req.body;
 
     if (!startDate || !endDate || !origin || !destination || !reason) {
       return res.status(400).json({ message: 'Start date, end date, origin, destination, and reason are required.' });
@@ -104,18 +117,18 @@ const createTravelRequest = async (req, res, next) => {
 
     let supportingDocumentId = null;
     let supportingDocumentPath = null;
-    
-    // Handle supporting document upload for booking type
-    if (travelType === 'booking' && req.file) {
+
+    // Handle supporting document upload for both booking and reimbursement
+    if (req.file) {
       try {
         const { storedName, targetPath } = await saveDocument({
           userId: String(req.user.id),
           folderType: 'travel',
           file: req.file
         });
-        
+
         supportingDocumentPath = targetPath;
-        
+
         // Try to create document record for tracking, but don't fail if it doesn't work
         try {
           const documentResult = await query(
@@ -161,7 +174,10 @@ const createTravelRequest = async (req, res, next) => {
         dsaProvided: dsaProvided || false,
         accommodationRate: accommodationRate || null,
         accommodationCurrency: accommodationCurrency || 'KES',
-        accommodationAmount: accommodationAmount || null
+        accommodationAmount: accommodationAmount || null,
+        accommodationProvided: accommodationProvided || false,
+        transportationCost: transportationCost || null,
+        fullDayEvent: fullDayEvent || false
       });
     } catch (dbError) {
       // If the error is about new columns not existing, retry without them
@@ -184,6 +200,10 @@ const createTravelRequest = async (req, res, next) => {
       }
     }
 
+    // Include receipts in the response
+    const requestWithReceipts = await travelModel.findTravelRequestById(request.id);
+    const receipts = await travelModel.listTravelReceipts({ travelRequestId: request.id });
+
     await logAction({
       actorUserId: req.user.id,
       actorRole: req.user.role,
@@ -195,29 +215,47 @@ const createTravelRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
-    // Send email notification to approver (best-effort)
+    // Send email notification to approvers and notification recipients (best-effort)
     try {
-      const approverId = await travelModel.getApproverForEmployee(req.user.id);
-      if (approverId) {
-        const approverResult = await query(
-          `SELECT id, first_name, last_name, email FROM users WHERE id = $1`,
-          [approverId]
+      const approverIds = await travelModel.getApproverForEmployee(req.user.id);
+      const recipients = [];
+
+      // Add all approvers
+      if (approverIds && approverIds.length > 0) {
+        const approverResults = await query(
+          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
+          [approverIds]
         );
-        if (approverResult.rows.length > 0) {
-          const approver = approverResult.rows[0];
-          await sendTravelRequestSubmittedEmail({
-            recipients: [{ id: approver.id, fullName: `${approver.first_name} ${approver.last_name}`, email: approver.email }],
-            travelRequest: request,
-            applicantName: req.user.fullName
-          });
-        }
+        approverResults.rows.forEach(approver => {
+          recipients.push({ id: approver.id, fullName: `${approver.first_name} ${approver.last_name}`, email: approver.email });
+        });
+      }
+
+      // Add notification recipients
+      const notificationSettings = await travelModel.getTravelNotificationSettings();
+      if (notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.length > 0) {
+        const notificationResults = await query(
+          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
+          [notificationSettings.recipientIds]
+        );
+        notificationResults.rows.forEach(recipient => {
+          recipients.push({ id: recipient.id, fullName: `${recipient.first_name} ${recipient.last_name}`, email: recipient.email });
+        });
+      }
+
+      if (recipients.length > 0) {
+        await sendTravelRequestSubmittedEmail({
+          recipients,
+          travelRequest: request,
+          applicantName: req.user.fullName
+        });
       }
     } catch (emailError) {
       // Best-effort email - don't fail the request if email fails
       console.error('Failed to send travel request notification email:', emailError.message);
     }
 
-    res.status(201).json({ request });
+    res.status(201).json({ request: { ...requestWithReceipts, receipts } });
   } catch (error) {
     next(error);
   }
@@ -226,14 +264,18 @@ const createTravelRequest = async (req, res, next) => {
 const updateTravelRequest = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount } = req.body;
+    const { startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent, supportingDocumentId } = req.body;
     const request = await travelModel.findTravelRequestById(id);
 
     console.log('UPDATE REQUEST - Received:', {
       dsaAmount,
       accommodationAmount,
+      dsaProvided,
+      accommodationProvided,
+      transportationCost,
       projectProgramme,
-      travelCategory
+      travelCategory,
+      supportingDocumentId
     });
 
     if (!request) {
@@ -267,14 +309,22 @@ const updateTravelRequest = async (req, res, next) => {
       dsaRate: dsaRate !== undefined ? Number(dsaRate) : request.dsaRate,
       dsaCurrency: dsaCurrency ?? request.dsaCurrency,
       dsaAmount: dsaAmount !== undefined ? Number(dsaAmount) : request.dsaAmount,
+      dsaProvided: dsaProvided !== undefined ? (dsaProvided === true || dsaProvided === 'true') : request.dsaProvided,
       accommodationRate: accommodationRate !== undefined ? Number(accommodationRate) : request.accommodationRate,
       accommodationCurrency: accommodationCurrency ?? request.accommodationCurrency,
-      accommodationAmount: accommodationAmount !== undefined ? Number(accommodationAmount) : request.accommodationAmount
+      accommodationAmount: accommodationAmount !== undefined ? Number(accommodationAmount) : request.accommodationAmount,
+      accommodationProvided: accommodationProvided !== undefined ? (accommodationProvided === true || accommodationProvided === 'true') : request.accommodationProvided,
+      transportationCost: transportationCost !== undefined && transportationCost !== '' ? Number(transportationCost) : request.transportationCost,
+      fullDayEvent: fullDayEvent !== undefined ? (fullDayEvent === true || fullDayEvent === 'true') : request.full_day_event,
+      supportingDocumentId: supportingDocumentId !== undefined ? (supportingDocumentId === null || supportingDocumentId === '' ? null : Number(supportingDocumentId)) : request.supportingDocumentId
     };
 
     console.log('UPDATE REQUEST - Sending to model:', updateParams);
 
     const updatedRequest = await travelModel.updateTravelRequestDetails(updateParams);
+
+    // Include receipts in the response
+    const receipts = await travelModel.listTravelReceipts({ travelRequestId: id });
 
     await logAction({
       actorUserId: req.user.id,
@@ -287,7 +337,7 @@ const updateTravelRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
-    res.json({ request: updatedRequest });
+    res.json({ request: { ...updatedRequest, receipts } });
   } catch (error) {
     next(error);
   }
@@ -342,19 +392,19 @@ const decideTravelRequest = async (req, res, next) => {
     }
 
     // ONLY check employee-specific routing - this is the only approval strategy
-    const approverForEmployee = await travelModel.getApproverForEmployee(request.userId);
-    
+    const approversForEmployee = await travelModel.getApproverForEmployee(request.userId);
+
     // CEO can approve their own requests
     if (req.user.role === 'ceo' && String(request.userId) === String(req.user.id)) {
       // CEO can self-approve
-    } 
-    // IT officers can approve for themselves if they are the designated approver
-    else if (req.user.role === 'it_officer' && String(request.userId) === String(req.user.id) && String(approverForEmployee) === String(req.user.id)) {
-      // IT officer can self-approve if they are the designated approver
     }
-    // User must be the designated approver for this employee
-    else if (!approverForEmployee || String(approverForEmployee) !== String(req.user.id)) {
-      return res.status(403).json({ message: 'You are not authorized to approve this travel request. Only the designated approver in employee-specific routing can approve.' });
+    // IT officers can approve for themselves if they are one of the designated approvers
+    else if (req.user.role === 'it_officer' && String(request.userId) === String(req.user.id) && approversForEmployee.includes(req.user.id)) {
+      // IT officer can self-approve if they are one of the designated approvers
+    }
+    // User must be one of the designated approvers for this employee
+    else if (!approversForEmployee || !approversForEmployee.includes(req.user.id)) {
+      return res.status(403).json({ message: 'You are not authorized to approve this travel request. Only the designated approvers in employee-specific routing can approve.' });
     }
 
     const normalizedComment = typeof comment === 'string' ? comment.trim() : '';
@@ -378,12 +428,14 @@ const decideTravelRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
-    // Send email notification to applicant (best-effort)
+    // Send email notification to applicant and notification recipients (best-effort)
     try {
       const applicantResult = await query(
         `SELECT id, first_name, last_name, email FROM users WHERE id = $1`,
         [request.userId]
       );
+
+      // Send to applicant
       if (applicantResult.rows.length > 0) {
         const applicant = applicantResult.rows[0];
         await sendTravelDecisionEmail({
@@ -394,6 +446,25 @@ const decideTravelRequest = async (req, res, next) => {
           reviewerName: req.user.fullName,
           comment: normalizedComment
         });
+      }
+
+      // Send to notification recipients
+      const notificationSettings = await travelModel.getTravelNotificationSettings();
+      if (notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.length > 0) {
+        const notificationResults = await query(
+          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
+          [notificationSettings.recipientIds]
+        );
+        for (const recipient of notificationResults.rows) {
+          await sendTravelDecisionEmail({
+            toEmail: recipient.email,
+            toName: `${recipient.first_name} ${recipient.last_name}`,
+            travelRequest: updatedRequest,
+            decision,
+            reviewerName: req.user.fullName,
+            comment: normalizedComment
+          });
+        }
       }
     } catch (emailError) {
       // Best-effort email - don't fail the request if email fails
@@ -468,7 +539,7 @@ const getTravelReceipt = async (req, res, next) => {
     }
 
     const travelRequest = await travelModel.findTravelRequestById(receipt.travelRequestId);
-    if (!canAccessTravelRequest(req.user, travelRequest)) {
+    if (!(await canAccessTravelRequest(req.user, travelRequest))) {
       return res.status(403).json({ message: 'You do not have permission to view this travel receipt.' });
     }
 
@@ -653,7 +724,7 @@ const downloadTravelReceipt = async (req, res, next) => {
     }
 
     const travelRequest = await travelModel.findTravelRequestById(receipt.travelRequestId);
-    if (!canAccessTravelRequest(req.user, travelRequest)) {
+    if (!(await canAccessTravelRequest(req.user, travelRequest))) {
       return res.status(403).json({ message: 'You do not have permission to access this receipt.' });
     }
 
@@ -698,12 +769,18 @@ const getTravelNotificationSettings = async (req, res, next) => {
 
 const updateTravelNotificationSettings = async (req, res, next) => {
   try {
-    const { recipientIds } = req.body;
+    const { recipientIds, viewAllTravelRequestsIds, settledEditorIds } = req.body;
+
+    console.log('updateTravelNotificationSettings - Received:', { recipientIds, viewAllTravelRequestsIds, settledEditorIds });
 
     const settings = await travelModel.updateTravelNotificationSettings({
       recipientIds: recipientIds || [],
+      viewAllTravelRequestsIds: viewAllTravelRequestsIds || [],
+      settledEditorIds: settledEditorIds || [],
       updatedBy: req.user.id
     });
+
+    console.log('updateTravelNotificationSettings - Saved settings:', settings);
 
     await logAction({
       actorUserId: req.user.id,
@@ -712,12 +789,13 @@ const updateTravelNotificationSettings = async (req, res, next) => {
       entityType: 'travel_notification_settings',
       entityId: String(settings.id || '1'),
       description: `${req.user.fullName} updated travel notification settings.`,
-      metadata: { recipientIds },
+      metadata: { recipientIds, viewAllTravelRequestsIds, settledEditorIds },
       ipAddress: req.ip
     });
 
     res.json({ settings });
   } catch (error) {
+    console.error('updateTravelNotificationSettings - Error:', error);
     next(error);
   }
 };
@@ -828,10 +906,78 @@ const removeEmployeeRouting = async (req, res, next) => {
   }
 };
 
+const updateTravelRequestSettled = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { settled } = req.body;
+
+    console.log('updateTravelRequestSettled - User role:', req.user.role, 'User ID:', req.user.id, 'User full name:', req.user.fullName);
+
+    if (typeof settled !== 'boolean') {
+      return res.status(400).json({ message: 'Settled status must be a boolean.' });
+    }
+
+    const request = await travelModel.findTravelRequestById(id);
+    if (!request) {
+      return res.status(404).json({ message: 'Travel request not found.' });
+    }
+
+    if (!(await canAccessTravelRequest(req.user, request))) {
+      return res.status(403).json({ message: 'You do not have permission to modify this travel request.' });
+    }
+
+    // Check if user has permission to edit settled status
+    const notificationSettings = await travelModel.getTravelNotificationSettings();
+    const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
+    const canEditSettled = oversightRoles.includes(req.user.role) ||
+                           req.user.positionTitle === 'Administration' ||
+                           (notificationSettings.settledEditorIds && notificationSettings.settledEditorIds.includes(String(req.user.id)));
+
+    console.log('updateTravelRequestSettled - positionTitle:', req.user.positionTitle, 'matches Administration:', req.user.positionTitle === 'Administration');
+
+    console.log('updateTravelRequestSettled - oversightRoles:', oversightRoles);
+    console.log('updateTravelRequestSettled - settledEditorIds:', notificationSettings.settledEditorIds);
+    console.log('updateTravelRequestSettled - canEditSettled (role check):', oversightRoles.includes(req.user.role));
+    console.log('updateTravelRequestSettled - canEditSettled (settings check):', notificationSettings.settledEditorIds && notificationSettings.settledEditorIds.includes(String(req.user.id)));
+    console.log('updateTravelRequestSettled - final canEditSettled:', canEditSettled);
+
+    if (!canEditSettled) {
+      return res.status(403).json({ message: 'You do not have permission to edit settled status.' });
+    }
+
+    await travelModel.updateTravelRequestSettled(id, settled);
+
+    await logAction({
+      actorUserId: req.user.id,
+      actorRole: req.user.role,
+      action: settled ? 'TRAVEL_REQUEST_SETTLED' : 'TRAVEL_REQUEST_UNSETTLED',
+      entityType: 'travel_request',
+      entityId: String(id),
+      description: `${req.user.fullName} marked travel request ${id} as ${settled ? 'settled' : 'unsettled'}.`,
+      metadata: { id, settled },
+      ipAddress: req.ip
+    });
+
+    res.json({ success: true, settled });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getPendingTravelRequestCount = async (req, res, next) => {
   try {
-    const count = await travelModel.getPendingTravelRequestCountForUser(req.user.id, req.user.role);
+    const count = await travelModel.getPendingTravelRequestCountForUserExcludingViewed(req.user.id, req.user.role, req.user.positionTitle);
     res.json({ count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const markTravelRequestAsViewed = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await travelModel.markTravelRequestAsViewed(id, req.user.id);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -859,5 +1005,7 @@ module.exports = {
   getApproverForEmployee,
   addEmployeeRouting,
   removeEmployeeRouting,
-  getPendingTravelRequestCount
+  getPendingTravelRequestCount,
+  markTravelRequestAsViewed,
+  updateTravelRequestSettled
 };

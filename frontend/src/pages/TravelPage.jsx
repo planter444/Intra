@@ -6,7 +6,7 @@ import SectionCard from '../components/SectionCard';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
-import { fetchTravelRequests, cancelTravelRequest, decideTravelRequest, deleteTravelRequest, getApproverForEmployee } from '../services/travelService';
+import { fetchTravelRequests, cancelTravelRequest, decideTravelRequest, deleteTravelRequest, getApproverForEmployee, updateTravelRequestSettled, fetchTravelNotificationSettings } from '../services/travelService';
 import { fetchUsers } from '../services/userService';
 
 const statusConfig = {
@@ -16,6 +16,18 @@ const statusConfig = {
   cancelled: { label: 'Cancelled', icon: XCircle, color: 'text-slate-600', bgColor: 'bg-slate-50', borderColor: 'border-slate-200' },
   in_progress: { label: 'In Progress', icon: Calendar, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
   completed: { label: 'Completed', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200' }
+};
+
+// Helper function to determine if a request is local movement
+const isLocalMovement = (request) => {
+  // Check travel_category first
+  if (request.travelCategory === 'Local Movement' || request.travelCategory === 'local movement' || request.travelCategory === 'Local') {
+    return true;
+  }
+  // Fallback: if accommodation is zero/null, it's likely local movement
+  const hasNoAccommodation = (!request.accommodationRate || request.accommodationRate === 0) &&
+                            (!request.accommodationAmount || request.accommodationAmount === 0);
+  return hasNoAccommodation;
 };
 
 const canDecideTravel = (user, request, employeeApprovers) => {
@@ -50,6 +62,7 @@ export default function TravelPage() {
   const [sortOrder, setSortOrder] = useState('desc');
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [users, setUsers] = useState([]);
+  const [canEditSettled, setCanEditSettled] = useState(false);
 
   const loadRequests = async () => {
     try {
@@ -57,7 +70,25 @@ export default function TravelPage() {
       const data = await fetchTravelRequests();
       const filteredRequests = data.filter(r => r.status !== 'cancelled');
       setRequests(filteredRequests);
-      
+
+      // Check if user can edit settled status
+      const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
+      const hasRoleAccess = oversightRoles.includes(user.role) || user.positionTitle === 'Administration';
+      console.log('loadRequests - User role:', user.role, 'User positionTitle:', user.positionTitle, 'hasRoleAccess:', hasRoleAccess);
+      if (hasRoleAccess) {
+        setCanEditSettled(true);
+      } else {
+        try {
+          const notificationSettings = await fetchTravelNotificationSettings();
+          const hasSettingsAccess = notificationSettings.settledEditorIds && notificationSettings.settledEditorIds.includes(String(user.id));
+          console.log('loadRequests - hasSettingsAccess:', hasSettingsAccess, 'settledEditorIds:', notificationSettings.settledEditorIds);
+          setCanEditSettled(hasSettingsAccess);
+        } catch (error) {
+          console.warn('Failed to load notification settings:', error.message);
+          setCanEditSettled(false);
+        }
+      }
+
       // Only fetch users if user has permission (not regular employee)
       if (user.role !== 'employee') {
         try {
@@ -71,7 +102,7 @@ export default function TravelPage() {
         // For employees, only show themselves in the filter
         setUsers([{ id: user.id, firstName: user.firstName, lastName: user.lastName }]);
       }
-      
+
       // Load approvers for each unique employee
       const uniqueEmployeeIds = [...new Set(filteredRequests.map(r => r.userId))];
       const approverMap = {};
@@ -168,14 +199,24 @@ export default function TravelPage() {
   };
 
   const filteredRequests = requests.filter((request) => {
-    if (user.role === 'employee') {
-      return String(request.userId) === String(user.id);
-    }
-    return true;
-  }).filter((request) => {
     // Employee filter
     if (selectedEmployee) {
       return String(request.userId) === String(selectedEmployee);
+    }
+    return true;
+  }).filter((request) => {
+    // Status/Settled filter
+    if (sortBy === 'pending') {
+      return request.status === 'pending';
+    }
+    if (sortBy === 'approved') {
+      return request.status === 'approved';
+    }
+    if (sortBy === 'settled') {
+      return request.settled === true;
+    }
+    if (sortBy === 'not_settled') {
+      return request.settled === false;
     }
     return true;
   }).filter((request) => {
@@ -294,6 +335,10 @@ export default function TravelPage() {
               <option value="destination">Sort by Destination</option>
               <option value="status">Sort by Status</option>
               <option value="type">Sort by Type</option>
+              <option value="pending">Filter: Pending</option>
+              <option value="approved">Filter: Approved</option>
+              <option value="settled">Filter: Settled</option>
+              <option value="not_settled">Filter: Not Settled</option>
             </select>
             <button
               type="button"
@@ -334,13 +379,15 @@ export default function TravelPage() {
                         </span>
                         <span className="text-xs text-slate-400 truncate">{request.employeeName}</span>
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${
-                          request.travelCategory === 'Local Movement' 
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
-                            : request.travelType === 'booking' 
-                              ? 'bg-blue-50 text-blue-600 border-blue-200' 
+                          isLocalMovement(request)
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                            : request.travelType === 'booking'
+                              ? 'bg-blue-50 text-blue-600 border-blue-200'
                               : 'bg-purple-50 text-purple-600 border-purple-200'
                         } border`}>
-                          {request.travelCategory === 'Local Movement' ? 'Local Movement' : request.travelType === 'booking' ? 'Official Booking' : 'Official Reimbursement'}
+                          {isLocalMovement(request)
+                            ? (request.travelType === 'booking' ? 'Local Booking' : 'Local Reimbursement')
+                            : request.travelType === 'booking' ? 'Official Booking' : 'Official Reimbursement'}
                         </span>
                       </div>
                       <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 truncate">
@@ -351,22 +398,63 @@ export default function TravelPage() {
                           <Calendar size={10} className="sm:size-10" />
                           {request.startDate} {request.endDate !== request.startDate ? `- ${request.endDate}` : ''}
                         </span>
-                        {request.referenceNumber && (
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-slate-500">Ref:</span>
-                            {request.referenceNumber}
-                          </span>
-                        )}
-                        {request.estimatedCost && (
+                        {request.travelType === 'reimbursement' ? (
                           <span className="flex items-center gap-1.5">
                             <DollarSign size={10} className="sm:size-10" />
-                            {request.currency || 'KES'} {request.estimatedCost.toLocaleString()}
+                            {(() => {
+                              // Group amounts by currency
+                              const amountsByCurrency = {};
+
+                              // Add DSA
+                              const effectiveDSA = request.dsaProvided ? 0 : (request.dsaAmount || 0);
+                              if (effectiveDSA > 0) {
+                                const currency = request.dsaCurrency || 'KES';
+                                amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + effectiveDSA;
+                              }
+
+                              // Add accommodation (not for local movement)
+                              if (!isLocalMovement(request)) {
+                                const effectiveAccommodation = request.accommodationProvided ? 0 : (request.accommodationAmount || 0);
+                                if (effectiveAccommodation > 0) {
+                                  const currency = request.accommodationCurrency || 'KES';
+                                  amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + effectiveAccommodation;
+                                }
+                              }
+
+                              // Add transportation
+                              const transportationValue = isLocalMovement(request)
+                                ? (request.transportationCost || 0)
+                                : (request.transportationCost || 0);
+                              if (transportationValue > 0) {
+                                const currency = request.currency || 'KES';
+                                amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationValue;
+                              }
+
+                              // Add estimated cost (other costs)
+                              const estimatedValue = request.estimatedCost || 0;
+                              if (estimatedValue > 0) {
+                                const currency = request.currency || 'KES';
+                                amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedValue;
+                              }
+
+                              // Display totals by currency
+                              return Object.entries(amountsByCurrency)
+                                .map(([currency, amount]) => `${amount.toLocaleString()} ${currency}`)
+                                .join(' + ');
+                            })()}
                           </span>
-                        )}
-                        {request.dsaAmount && request.travelCategory !== 'Local Movement' && parseFloat(request.dsaAmount) > 0 && (
+                        ) : (
                           <span className="flex items-center gap-1.5">
                             <DollarSign size={10} className="sm:size-10" />
-                            DSA: {request.dsaCurrency || 'KES'} {request.dsaAmount.toLocaleString()}
+                            {request.currency || 'KES'} {(
+                              isLocalMovement(request)
+                                ? (request.estimatedCost || 0) // For local movement, estimatedCost is already the total
+                                : (
+                                  ((request.dsaProvided ? 0 : request.dsaAmount) || 0) +
+                                  ((request.accommodationProvided ? 0 : request.accommodationAmount) || 0) +
+                                  (request.estimatedCost || 0)
+                                )
+                            ).toLocaleString()}
                           </span>
                         )}
                       </div>
@@ -375,7 +463,36 @@ export default function TravelPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto justify-end">
-                      {String(request.userId) === String(user.id) && request.status === 'pending' && (
+                      {/* Settled toggle for users with edit permission */}
+                      {canEditSettled ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateTravelRequestSettled(request.id, !request.settled).then(() => {
+                              setRequests(requests.map(r => r.id === request.id ? { ...r, settled: !r.settled } : r));
+                            });
+                          }}
+                          className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+                            request.settled
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200 border'
+                              : 'bg-slate-50 text-slate-500 border-slate-200 border hover:bg-slate-100'
+                          }`}
+                          title={request.settled ? 'Mark as not settled' : 'Mark as settled'}
+                        >
+                          <CheckCircle size={12} />
+                          {request.settled ? 'Settled' : 'Settle'}
+                        </button>
+                      ) : (
+                        /* View-only settled indicator for users without edit permission */
+                        request.settled && (
+                          <span className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-600 border-emerald-200 border">
+                            <CheckCircle size={12} />
+                            Settled
+                          </span>
+                        )
+                      )}
+                      {String(request.userId) === String(user.id) && request.status === 'pending' && !request.settled && (
                         <button
                           type="button"
                           className="flex-1 sm:flex-none rounded-lg border border-slate-200 px-1.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 sm:px-2 sm:text-sm"
@@ -451,13 +568,15 @@ export default function TravelPage() {
                         </span>
                         <span className="text-sm text-slate-400">{request.employeeName}</span>
                         <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${
-                          request.travelCategory === 'Local Movement' 
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
-                            : request.travelType === 'booking' 
-                              ? 'bg-blue-50 text-blue-600 border-blue-200' 
+                          isLocalMovement(request)
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                            : request.travelType === 'booking'
+                              ? 'bg-blue-50 text-blue-600 border-blue-200'
                               : 'bg-purple-50 text-purple-600 border-purple-200'
                         } border`}>
-                          {request.travelCategory === 'Local Movement' ? 'Local Movement' : request.travelType === 'booking' ? 'Official Booking' : 'Official Reimbursement'}
+                          {isLocalMovement(request)
+                            ? (request.travelType === 'booking' ? 'Local Booking' : 'Local Reimbursement')
+                            : request.travelType === 'booking' ? 'Official Booking' : 'Official Reimbursement'}
                         </span>
                       </div>
                       <h3 className="mt-2 text-lg font-semibold text-slate-900">
@@ -468,22 +587,35 @@ export default function TravelPage() {
                           <Calendar size={16} />
                           {request.startDate} {request.endDate !== request.startDate ? `- ${request.endDate}` : ''}
                         </span>
-                        {request.referenceNumber && (
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-slate-500">Ref:</span>
-                            {request.referenceNumber}
-                          </span>
-                        )}
-                        {request.estimatedCost && (
+                        {request.travelType === 'reimbursement' ? (
                           <span className="flex items-center gap-1.5">
                             <DollarSign size={16} />
-                            {request.currency || 'KES'} {request.estimatedCost.toLocaleString()}
+                            {request.currency || 'KES'} {(
+                              isLocalMovement(request)
+                                ? (
+                                  ((request.dsaProvided ? 0 : request.dsaAmount) || 0) +
+                                  (request.transportationCost || 0)
+                                ) // For local movement reimbursement: DSA + transportation
+                                : (
+                                  ((request.dsaProvided ? 0 : request.dsaAmount) || 0) +
+                                  ((request.accommodationProvided ? 0 : request.accommodationAmount) || 0) +
+                                  (request.transportationCost || 0) +
+                                  (request.estimatedCost || 0)
+                                )
+                            ).toLocaleString()}
                           </span>
-                        )}
-                        {request.dsaAmount && request.travelCategory !== 'Local Movement' && parseFloat(request.dsaAmount) > 0 && (
+                        ) : (
                           <span className="flex items-center gap-1.5">
                             <DollarSign size={16} />
-                            DSA: {request.dsaCurrency || 'KES'} {request.dsaAmount.toLocaleString()}
+                            {request.currency || 'KES'} {(
+                              isLocalMovement(request)
+                                ? (request.estimatedCost || 0) // For local movement, estimatedCost is already the total
+                                : (
+                                  ((request.dsaProvided ? 0 : request.dsaAmount) || 0) +
+                                  ((request.accommodationProvided ? 0 : request.accommodationAmount) || 0) +
+                                  (request.estimatedCost || 0)
+                                )
+                            ).toLocaleString()}
                           </span>
                         )}
                       </div>

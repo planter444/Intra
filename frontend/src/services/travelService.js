@@ -1,7 +1,10 @@
 import api from './api';
 
 export const fetchTravelRequests = async (params = {}) => {
-  const response = await api.get('/travel/requests', { params });
+  // Add timestamp to prevent caching
+  const response = await api.get('/travel/requests', { 
+    params: { ...params, _t: Date.now() }
+  });
   return response.data.requests;
 };
 
@@ -119,4 +122,14 @@ export const removeEmployeeRouting = async (id) => {
 export const getPendingTravelRequestCount = async () => {
   const response = await api.get('/travel/pending-count');
   return response.data.count;
+};
+
+export const markTravelRequestAsViewed = async (id) => {
+  const response = await api.post(`/travel/requests/${id}/viewed`);
+  return response.data;
+};
+
+export const updateTravelRequestSettled = async (id, settled) => {
+  const response = await api.patch(`/travel/requests/${id}/settled`, { settled });
+  return response.data;
 };

@@ -21,7 +21,9 @@ const {
   getApproverForEmployee,
   addEmployeeRouting,
   removeEmployeeRouting,
-  getPendingTravelRequestCount
+  getPendingTravelRequestCount,
+  markTravelRequestAsViewed,
+  updateTravelRequestSettled
 } = require('../controllers/travelController');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -32,20 +34,23 @@ const router = express.Router();
 router.use(authenticate);
 
 // Travel request routes
-router.get('/requests', listTravelRequests);
+router.get('/requests', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  listTravelRequests(req, res, next);
+});
 router.get('/requests/:id', getTravelRequest);
-router.post('/requests', authorize('employee', 'supervisor', 'admin', 'finance'), upload.single('supportingDocument'), createTravelRequest);
-router.put('/requests/:id', authorize('employee', 'supervisor', 'admin', 'finance'), updateTravelRequest);
-router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin', 'finance'), cancelTravelRequest);
-router.patch('/requests/:id/decision', authorize('supervisor', 'admin', 'ceo', 'finance'), decideTravelRequest);
+router.post('/requests', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), upload.single('supportingDocument'), createTravelRequest);
+router.put('/requests/:id', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), updateTravelRequest);
+router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), cancelTravelRequest);
+router.patch('/requests/:id/decision', authorize('supervisor', 'admin', 'ceo', 'finance', 'administrator_and_membership_officer'), decideTravelRequest);
 router.delete('/requests/:id', authorize('admin'), deleteTravelRequestPermanently);
 
 // Travel receipt routes
 router.get('/receipts', listTravelReceipts);
 router.get('/receipts/:id', getTravelReceipt);
 router.get('/receipts/:id/download', downloadTravelReceipt);
-router.post('/receipts', authorize('employee', 'supervisor', 'admin', 'finance'), upload.single('receipt'), uploadTravelReceipt);
-router.patch('/receipts/:id/status', authorize('finance', 'ceo', 'admin', 'supervisor'), updateTravelReceiptStatus);
+router.post('/receipts', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), upload.single('receipt'), uploadTravelReceipt);
+router.patch('/receipts/:id/status', authorize('finance', 'ceo', 'admin', 'supervisor', 'administrator_and_membership_officer'), updateTravelReceiptStatus);
 router.delete('/receipts/:id', authorize('admin'), deleteTravelReceipt);
 
 // Travel notification settings routes (admin only)
@@ -64,5 +69,11 @@ router.delete('/employee-routing/:id', authorize('admin'), removeEmployeeRouting
 
 // Pending count route
 router.get('/pending-count', getPendingTravelRequestCount);
+
+// Mark travel request as viewed
+router.post('/requests/:id/viewed', markTravelRequestAsViewed);
+
+// Update travel request settled status
+router.patch('/requests/:id/settled', updateTravelRequestSettled);
 
 module.exports = router;

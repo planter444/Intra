@@ -11,7 +11,9 @@ import { updateSettings } from '../services/settingsService';
 export default function TravelSettingsPage() {
   const { user, settings, replaceSettings } = useAuth();
   const [notificationSettings, setNotificationSettings] = useState({
-    recipientIds: []
+    recipientIds: [],
+    viewAllTravelRequestsIds: [],
+    settledEditorIds: []
   });
   const [employeeRouting, setEmployeeRouting] = useState([]);
   const [users, setUsers] = useState([]);
@@ -21,24 +23,27 @@ export default function TravelSettingsPage() {
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedApprover, setSelectedApprover] = useState('');
   const [selectedNotificationRecipients, setSelectedNotificationRecipients] = useState([]);
+  const [selectedViewAllTravelRequests, setSelectedViewAllTravelRequests] = useState([]);
+  const [selectedSettledEditors, setSelectedSettledEditors] = useState([]);
   const [designationModal, setDesignationModal] = useState({ open: false, userId: null, designation: '' });
   const [projectsModal, setProjectsModal] = useState({ open: false, project: '' });
   const [dsaSettings, setDsaSettings] = useState({
-    mode: 'designation', // 'designation' or 'standard'
-    calculationBasis: 'nights', // 'nights' or 'days'
+    mode: 'standard', // 'designation' or 'standard'
+    calculationBasis: 'days', // 'nights' or 'days' - now using days as per requirement
     kenyaRate: 2000,
     kenyaCurrency: 'KES',
     eastAfricaRate: 40,
     eastAfricaCurrency: 'USD',
     internationalRate: 50,
     internationalCurrency: 'USD',
-    description: 'Covers accommodation, meals, and incidental costs'
+    applicableTo: ['all'], // 'all', 'fieldOfficer', 'intern', 'secretariat', 'consultant'
   });
   const [accommodationSettings, setAccommodationSettings] = useState({
     enabled: true,
     rate: 4000,
     currency: 'KES',
-    description: 'Accommodation allowance per night'
+    description: 'Accommodation allowance per night',
+    applicableTo: ['all'] // 'all', 'fieldOfficer', 'intern', 'secretariat', 'consultant'
   });
   const [hotelsModal, setHotelsModal] = useState({ open: false, hotel: null });
   const [hotelForm, setHotelForm] = useState({
@@ -59,14 +64,15 @@ export default function TravelSettingsPage() {
   useEffect(() => {
     if (settings?.travel?.dsa) {
       setDsaSettings({
-        mode: settings.travel.dsa.mode || 'designation',
-        calculationBasis: settings.travel.dsa.calculationBasis || 'nights',
+        mode: settings.travel.dsa.mode || 'standard',
+        calculationBasis: settings.travel.dsa.calculationBasis || 'days',
         kenyaRate: settings.travel.dsa.kenyaRate || 2000,
         kenyaCurrency: settings.travel.dsa.kenyaCurrency || 'KES',
         eastAfricaRate: settings.travel.dsa.eastAfricaRate || 40,
         eastAfricaCurrency: settings.travel.dsa.eastAfricaCurrency || 'USD',
         internationalRate: settings.travel.dsa.internationalRate || 50,
-        internationalCurrency: settings.travel.dsa.internationalCurrency || 'USD'
+        internationalCurrency: settings.travel.dsa.internationalCurrency || 'USD',
+        applicableTo: settings.travel.dsa.applicableTo || ['all']
       });
     }
     if (settings?.travel?.accommodation) {
@@ -74,7 +80,8 @@ export default function TravelSettingsPage() {
         enabled: settings.travel.accommodation.enabled !== undefined ? settings.travel.accommodation.enabled : true,
         rate: settings.travel.accommodation.rate || 4000,
         currency: settings.travel.accommodation.currency || 'KES',
-        description: settings.travel.accommodation.description || 'Accommodation allowance per night'
+        description: settings.travel.accommodation.description || 'Accommodation allowance per night',
+        applicableTo: settings.travel.accommodation.applicableTo || ['all']
       });
     }
   }, [settings]);
@@ -91,6 +98,8 @@ export default function TravelSettingsPage() {
       setEmployeeRouting(routingList);
       setUsers(usersList);
       setSelectedNotificationRecipients(notificationData.recipientIds || []);
+      setSelectedViewAllTravelRequests(notificationData.viewAllTravelRequestsIds || []);
+      setSelectedSettledEditors(notificationData.settledEditorIds || []);
     } catch (error) {
       setNotice({
         open: true,
@@ -105,8 +114,17 @@ export default function TravelSettingsPage() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      await updateTravelNotificationSettings({ recipientIds: selectedNotificationRecipients });
-      setNotificationSettings({ ...notificationSettings, recipientIds: selectedNotificationRecipients });
+      await updateTravelNotificationSettings({
+        recipientIds: selectedNotificationRecipients,
+        viewAllTravelRequestsIds: selectedViewAllTravelRequests,
+        settledEditorIds: selectedSettledEditors
+      });
+      setNotificationSettings({
+        ...notificationSettings,
+        recipientIds: selectedNotificationRecipients,
+        viewAllTravelRequestsIds: selectedViewAllTravelRequests,
+        settledEditorIds: selectedSettledEditors
+      });
       
       // Save DSA settings
       await updateSettings({
@@ -152,6 +170,16 @@ export default function TravelSettingsPage() {
 
   const handleNotificationRecipientChange = (userId) => {
     setSelectedNotificationRecipients(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  const handleViewAllTravelRequestsChange = (userId) => {
+    setSelectedViewAllTravelRequests(prev => {
       if (prev.includes(userId)) {
         return prev.filter(id => id !== userId);
       } else {
@@ -580,33 +608,95 @@ export default function TravelSettingsPage() {
       </div>
 
       {activeTab === 'notifications' && (
-        <SectionCard title="Travel notification recipients" subtitle="Select employees who should receive notifications when travel requests are submitted or receipts are uploaded.">
-          <div className="space-y-4">
-            {users.length === 0 ? (
-              <p className="text-sm text-slate-500">No employees available.</p>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {users.map((u) => (
-                  <label key={u.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={selectedNotificationRecipients.includes(String(u.id))}
-                      onChange={() => handleNotificationRecipientChange(String(u.id))}
-                      className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{u.firstName} {u.lastName}</p>
-                      <p className="text-xs text-slate-500">{u.email} • {u.role}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-            <p className="text-sm text-slate-500">
-              {selectedNotificationRecipients.length} employee(s) selected for notifications
-            </p>
-          </div>
-        </SectionCard>
+        <>
+          <SectionCard title="Travel notification recipients" subtitle="Select employees who should receive notifications when travel requests are submitted or receipts are uploaded.">
+            <div className="space-y-4">
+              {users.length === 0 ? (
+                <p className="text-sm text-slate-500">No employees available.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {users.map((u) => (
+                    <label key={u.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedNotificationRecipients.includes(String(u.id))}
+                        onChange={() => handleNotificationRecipientChange(String(u.id))}
+                        className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{u.firstName} {u.lastName}</p>
+                        <p className="text-xs text-slate-500">{u.email} • {u.role}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-sm text-slate-500">
+                {selectedNotificationRecipients.length} employee(s) selected for notifications
+              </p>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="View All Travel Requests" subtitle="Select employees who can view all travel requests in the organization (read-only). CEO always has access.">
+            <div className="space-y-4">
+              {users.length === 0 ? (
+                <p className="text-sm text-slate-500">No employees available.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {users.map((u) => (
+                    <label key={u.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedViewAllTravelRequests.includes(String(u.id))}
+                        onChange={() => handleViewAllTravelRequestsChange(String(u.id))}
+                        className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{u.firstName} {u.lastName}</p>
+                        <p className="text-xs text-slate-500">{u.email} • {u.role}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-sm text-slate-500">
+                {selectedViewAllTravelRequests.length} employee(s) selected to view all travel requests
+              </p>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Settled Status Editors" subtitle="Select employees who can mark travel requests as settled (paid/processed). Finance, IT Officer, CEO, Administrator, and Membership Officer always have access.">
+            <div className="space-y-4">
+              {users.length === 0 ? (
+                <p className="text-sm text-slate-500">No employees available.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {users.map((u) => (
+                    <label key={u.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedSettledEditors.includes(String(u.id))}
+                        onChange={() => setSelectedSettledEditors(prev =>
+                          prev.includes(String(u.id))
+                            ? prev.filter(id => id !== String(u.id))
+                            : [...prev, String(u.id)]
+                        )}
+                        className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{u.firstName} {u.lastName}</p>
+                        <p className="text-xs text-slate-500">{u.email} • {u.role}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-sm text-slate-500">
+                {selectedSettledEditors.length} employee(s) selected to edit settled status
+              </p>
+            </div>
+          </SectionCard>
+        </>
       )}
 
       {activeTab === 'designations' && (
@@ -716,6 +806,55 @@ export default function TravelSettingsPage() {
               </div>
             </div>
 
+            {/* DSA Applicability */}
+            <div>
+              <label className="mb-3 block text-sm font-medium text-slate-700">DSA Applicability</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={dsaSettings.applicableTo.includes('all')}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setDsaSettings({ ...dsaSettings, applicableTo: ['all'] });
+                      } else {
+                        setDsaSettings({ ...dsaSettings, applicableTo: [] });
+                      }
+                    }}
+                    className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:-ring-emerald-500"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-900">Apply to All Staff</p>
+                    <p className="text-sm text-slate-500">This DSA rate will apply to all employees regardless of designation</p>
+                  </div>
+                </label>
+                
+                {!dsaSettings.applicableTo.includes('all') && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {['fieldOfficer', 'intern', 'secretariat', 'consultant'].map((designation) => (
+                      <label key={designation} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
+                        <input
+                          type="checkbox"
+                          checked={dsaSettings.applicableTo.includes(designation)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDsaSettings({ ...dsaSettings, applicableTo: [...dsaSettings.applicableTo, designation] });
+                            } else {
+                              setDsaSettings({ ...dsaSettings, applicableTo: dsaSettings.applicableTo.filter(d => d !== designation) });
+                            }
+                          }}
+                          className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-900 capitalize">{designation.replace(/([A-Z])/g, ' $1')}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* DSA Description */}
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">DSA Description Message</label>
@@ -733,6 +872,21 @@ export default function TravelSettingsPage() {
             <div>
               <label className="mb-3 block text-sm font-medium text-slate-700">DSA Calculation Basis</label>
               <div className="space-y-2">
+                <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="radio"
+                    name="calculationBasis"
+                    value="days"
+                    checked={dsaSettings.calculationBasis === 'days'}
+                    onChange={(e) => setDsaSettings({ ...dsaSettings, calculationBasis: e.target.value })}
+                    className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-900">Charge by Days</p>
+                    <p className="text-sm text-slate-500">Calculate days including both start and end date (e.g., Monday to Friday = 5 days)</p>
+                  </div>
+                </label>
+                
                 <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 cursor-pointer hover:bg-slate-50">
                   <input
                     type="radio"
@@ -1026,6 +1180,57 @@ export default function TravelSettingsPage() {
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
                     placeholder="e.g., Accommodation allowance per night"
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Accommodation Applicability */}
+            {accommodationSettings.enabled && (
+              <div>
+                <label className="mb-3 block text-sm font-medium text-slate-700">Accommodation Applicability</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={accommodationSettings.applicableTo.includes('all')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setAccommodationSettings({ ...accommodationSettings, applicableTo: ['all'] });
+                        } else {
+                          setAccommodationSettings({ ...accommodationSettings, applicableTo: [] });
+                        }
+                      }}
+                      className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-900">Apply to All Staff</p>
+                      <p className="text-sm text-slate-500">This accommodation rate will apply to all employees regardless of designation</p>
+                    </div>
+                  </label>
+                  
+                  {!accommodationSettings.applicableTo.includes('all') && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {['fieldOfficer', 'intern', 'secretariat', 'consultant'].map((designation) => (
+                        <label key={designation} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={accommodationSettings.applicableTo.includes(designation)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAccommodationSettings({ ...accommodationSettings, applicableTo: [...accommodationSettings.applicableTo, designation] });
+                              } else {
+                                setAccommodationSettings({ ...accommodationSettings, applicableTo: accommodationSettings.applicableTo.filter(d => d !== designation) });
+                              }
+                            }}
+                            className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-900 capitalize">{designation.replace(/([A-Z])/g, ' $1')}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -46,7 +46,11 @@ const mapTravelRequest = (row) => ({
   referenceNumber: row.reference_number || null,
   accommodationRate: row.accommodation_rate ? Number(row.accommodation_rate) : null,
   accommodationCurrency: row.accommodation_currency || 'KES',
-  accommodationAmount: row.accommodation_amount ? Number(row.accommodation_amount) : null
+  accommodationAmount: row.accommodation_amount ? Number(row.accommodation_amount) : null,
+  accommodationProvided: row.accommodation_provided || false,
+  transportationCost: row.transportation_cost ? Number(row.transportation_cost) : null,
+  fullDayEvent: row.full_day_event || false,
+  settled: row.settled || false
 });
 
 const generateReferenceNumber = async () => {
@@ -65,9 +69,9 @@ const generateReferenceNumber = async () => {
   return `KEREA-TRV-${year}-${sequence}`;
 };
 
-const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount }) => {
+const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent }) => {
   const referenceNumber = await generateReferenceNumber();
-  
+
   let result;
   try {
     result = await query(
@@ -94,43 +98,21 @@ const createTravelRequest = async ({ userId, travelType, startDate, endDate, ori
           accommodation_rate,
           accommodation_currency,
           accommodation_amount,
+          accommodation_provided,
+          transportation_cost,
+          full_day_event,
           reference_number,
           status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 'pending')
         RETURNING id
       `,
-      [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null, designation || null, travelCategory || null, travelTypeDetail || null, projectProgramme || null, dsaRate || null, dsaCurrency || 'KES', dsaAmount || null, dsaProvided || false, accommodationRate || null, accommodationCurrency || 'KES', accommodationAmount || null, referenceNumber]
+      [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null, designation || null, travelCategory || null, travelTypeDetail || null, projectProgramme || null, dsaRate || null, dsaCurrency || 'KES', dsaAmount || null, dsaProvided || false, accommodationRate || null, accommodationCurrency || 'KES', accommodationAmount || null, accommodationProvided || false, transportationCost || null, fullDayEvent || false, referenceNumber]
     );
   } catch (error) {
     console.error('Travel request insert error:', error.message);
-    // If new columns don't exist, retry with basic columns
-    console.warn('Retrying travel request insert with basic columns');
-    try {
-      result = await query(
-        `
-          INSERT INTO travel_requests (
-            user_id,
-            travel_type,
-            start_date,
-            end_date,
-            origin,
-            destination,
-            reason,
-            estimated_cost,
-            currency,
-            supporting_document_id,
-            status
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
-          RETURNING id
-        `,
-        [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null]
-      );
-    } catch (fallbackError) {
-      console.error('Fallback travel request insert also failed:', fallbackError.message);
-      throw fallbackError;
-    }
+    // Don't use fallback - throw the actual error so it can be fixed properly
+    throw error;
   }
 
   return findTravelRequestById(result.rows[0].id);
@@ -183,14 +165,26 @@ const findTravelRequestById = async (id) => {
   };
 };
 
-const listTravelRequests = async ({ viewerId, role, userId, status } = {}) => {
+const listTravelRequests = async ({ viewerId, role, userId, status, positionTitle } = {}) => {
   const clauses = [];
   const params = [];
-  const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer'];
+  const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
+
+  // Check if viewer has access to view all travel requests
+  const notificationSettings = await getTravelNotificationSettings();
+  const canViewAll = notificationSettings && notificationSettings.viewAllTravelRequestsIds && notificationSettings.viewAllTravelRequestsIds.includes(viewerId);
+
+  // Admin and membership officer always have view-all access
+  const hasAutomaticViewAll = role === 'admin' || role === 'administrator_and_membership_officer' || positionTitle === 'Administration';
+
+  console.log('listTravelRequests - viewerId:', viewerId, 'role:', role, 'positionTitle:', positionTitle, 'canViewAll:', canViewAll, 'hasAutomaticViewAll:', hasAutomaticViewAll);
 
   if (role === 'employee') {
-    params.push(viewerId);
-    clauses.push(`tr.user_id = $${params.length}`);
+    // Employees see their own requests, unless they have view-all access
+    if (!canViewAll && !hasAutomaticViewAll) {
+      params.push(viewerId);
+      clauses.push(`tr.user_id = $${params.length}`);
+    }
   } else if (role === 'supervisor') {
     params.push(viewerId);
     clauses.push(`(
@@ -202,14 +196,14 @@ const listTravelRequests = async ({ viewerId, role, userId, status } = {}) => {
           AND is_deleted = FALSE
       )
     )`);
-  } else if (!oversightRoles.includes(role)) {
-    // For any other role not in oversight, only show own requests
+  } else if (!oversightRoles.includes(role) && !canViewAll && !hasAutomaticViewAll) {
+    // For any other role not in oversight and without view-all access, only show own requests
     params.push(viewerId);
     clauses.push(`tr.user_id = $${params.length}`);
   }
-  // For oversight roles (admin, ceo, finance, it_officer), no user filter - they see all
+  // For oversight roles (admin, ceo, finance, it_officer), membership officer, administrator, and users with view-all access, no user filter - they see all
 
-  if (userId && oversightRoles.includes(role)) {
+  if (userId && (oversightRoles.includes(role) || canViewAll || hasAutomaticViewAll)) {
     params.push(userId);
     clauses.push(`tr.user_id = $${params.length}`);
   }
@@ -220,6 +214,10 @@ const listTravelRequests = async ({ viewerId, role, userId, status } = {}) => {
   }
 
   const whereClause = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  console.log('listTravelRequests - SQL whereClause:', whereClause);
+  console.log('listTravelRequests - SQL params:', params);
+
   const result = await query(
     `
       SELECT
@@ -232,10 +230,13 @@ const listTravelRequests = async ({ viewerId, role, userId, status } = {}) => {
     params
   );
 
+  console.log('listTravelRequests - Found', result.rows.length, 'travel requests');
+
   const requests = [];
   for (const row of result.rows) {
     requests.push(await findTravelRequestById(row.id));
   }
+  console.log('listTravelRequests - Returning', requests.length, 'requests');
   return requests;
 };
 
@@ -257,16 +258,20 @@ const updateTravelRequestStatus = async ({ id, status, approvedBy, rejectionReas
   return findTravelRequestById(id);
 };
 
-const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount }) => {
+const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent, supportingDocumentId }) => {
   let result;
   console.log('MODEL UPDATE - Received params:', {
     id,
     dsaAmount,
     accommodationAmount,
+    dsaProvided,
+    accommodationProvided,
+    transportationCost,
+    fullDayEvent,
     projectProgramme,
     travelCategory
   });
-  
+
   try {
     result = await query(
       `
@@ -285,50 +290,37 @@ const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, dest
           dsa_rate = $12,
           dsa_currency = $13,
           dsa_amount = $14,
-          accommodation_rate = $15,
-          accommodation_currency = $16,
-          accommodation_amount = $17,
+          dsa_provided = $15,
+          accommodation_rate = $16,
+          accommodation_currency = $17,
+          accommodation_amount = $18,
+          accommodation_provided = $19,
+          transportation_cost = $20,
+          full_day_event = $21,
+          supporting_document_id = $22,
           updated_at = NOW()
         WHERE id = $1
       `,
-      [id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, accommodationRate, accommodationCurrency, accommodationAmount]
+      [id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent, supportingDocumentId]
     );
     console.log('MODEL UPDATE - Query executed successfully, rows affected:', result.rowCount);
   } catch (error) {
     console.error('Travel request update error:', error.message);
-    // If new columns don't exist, retry with basic columns
-    console.warn('Retrying travel request update with basic columns');
-    try {
-      result = await query(
-        `
-          UPDATE travel_requests
-          SET
-            start_date = $2,
-            end_date = $3,
-            origin = $4,
-            destination = $5,
-            reason = $6,
-            estimated_cost = $7,
-            updated_at = NOW()
-          WHERE id = $1
-        `,
-        [id, startDate, endDate, origin, destination, reason, estimatedCost]
-      );
-      console.log('MODEL UPDATE - Fallback query executed');
-    } catch (fallbackError) {
-      console.error('Fallback travel request update also failed:', fallbackError.message);
-      throw fallbackError;
-    }
+    // Don't use fallback - throw the actual error so it can be fixed properly
+    throw error;
   }
 
   const updated = await findTravelRequestById(id);
   console.log('MODEL UPDATE - Updated request:', {
     dsaAmount: updated.dsaAmount,
+    dsaProvided: updated.dsa_provided,
     accommodationAmount: updated.accommodationAmount,
+    accommodationProvided: updated.accommodation_provided,
+    transportationCost: updated.transportation_cost,
     projectProgramme: updated.projectProgramme,
     travelCategory: updated.travelCategory
   });
-  
+
   return updated;
 };
 
@@ -381,33 +373,8 @@ const createTravelReceipt = async ({ travelRequestId, uploadedBy, fileName, stor
     );
   } catch (dbError) {
     console.error('Failed to insert travel receipt:', dbError.message);
-    // If table doesn't exist or has schema issues, try with minimal columns
-    if (dbError.message && (dbError.message.includes('relation "travel_receipts" does not exist') || dbError.message.includes('column'))) {
-      console.warn('travel_receipts table has schema issues, attempting minimal insert');
-      try {
-        result = await query(
-          `
-            INSERT INTO travel_receipts (
-              travel_request_id,
-              uploaded_by,
-              file_name,
-              stored_name,
-              mime_type,
-              file_size,
-              storage_path
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
-          `,
-          [travelRequestId, uploadedBy, fileName, storedName, mimeType, fileSize, storagePath]
-        );
-      } catch (fallbackError) {
-        console.error('Fallback insert also failed:', fallbackError.message);
-        throw fallbackError;
-      }
-    } else {
-      throw dbError;
-    }
+    // Don't use fallback - throw the actual error so it can be fixed properly
+    throw dbError;
   }
 
   return findTravelReceiptById(result.rows[0].id);
@@ -532,20 +499,27 @@ const getTravelNotificationSettings = async () => {
   );
 
   if (result.rows.length === 0) {
+    console.log('getTravelNotificationSettings - No settings found, returning defaults');
     return {
       id: null,
-      recipientIds: []
+      recipientIds: [],
+      viewAllTravelRequestsIds: [],
+      settledEditorIds: []
     };
   }
 
   const row = result.rows[0];
-  return {
+  const settings = {
     id: row.id,
-    recipientIds: row.recipient_ids || []
+    recipientIds: row.recipient_ids || [],
+    viewAllTravelRequestsIds: row.view_all_travel_requests_ids || [],
+    settledEditorIds: row.settled_editor_ids || []
   };
+  console.log('getTravelNotificationSettings - Settings loaded:', settings);
+  return settings;
 };
 
-const updateTravelNotificationSettings = async ({ recipientIds, updatedBy }) => {
+const updateTravelNotificationSettings = async ({ recipientIds, viewAllTravelRequestsIds, settledEditorIds, updatedBy }) => {
   const existing = await query(`SELECT id FROM travel_notification_settings LIMIT 1`);
 
   if (existing.rows.length > 0) {
@@ -554,22 +528,26 @@ const updateTravelNotificationSettings = async ({ recipientIds, updatedBy }) => 
         UPDATE travel_notification_settings
         SET
           recipient_ids = $2,
-          updated_by = $3,
+          view_all_travel_requests_ids = $3,
+          settled_editor_ids = $4,
+          updated_by = $5,
           updated_at = NOW()
         WHERE id = $1
       `,
-      [existing.rows[0].id, recipientIds || [], updatedBy]
+      [existing.rows[0].id, recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], updatedBy]
     );
   } else {
     await query(
       `
         INSERT INTO travel_notification_settings (
           recipient_ids,
+          view_all_travel_requests_ids,
+          settled_editor_ids,
           updated_by
         )
-        VALUES ($1, $2)
+        VALUES ($1, $2, $3, $4)
       `,
-      [recipientIds || [], updatedBy]
+      [recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], updatedBy]
     );
   }
 
@@ -887,7 +865,6 @@ const getApproverForEmployee = async (employeeId) => {
       FROM travel_employee_routing
       WHERE employee_id = $1
       ORDER BY created_at DESC
-      LIMIT 1
     `,
     [employeeId]
   );
@@ -903,37 +880,45 @@ const getApproverForEmployee = async (employeeId) => {
       `
     );
     if (ceoResult.rows.length > 0) {
-      return ceoResult.rows[0].id;
+      return [ceoResult.rows[0].id];
     }
-    return null;
+    return [];
   }
 
-  return result.rows[0].approver_id;
+  // Return all approvers for this employee
+  return result.rows.map(row => row.approver_id);
 };
 
 const addEmployeeRouting = async ({ employeeId, approverId }) => {
-  const result = await query(
-    `
-      INSERT INTO travel_employee_routing (employee_id, approver_id)
-      VALUES ($1, $2)
-      ON CONFLICT (employee_id, approver_id) DO NOTHING
-      RETURNING *
-    `,
-    [employeeId, approverId]
-  );
+  try {
+    const result = await query(
+      `
+        INSERT INTO travel_employee_routing (employee_id, approver_id)
+        VALUES ($1, $2)
+        RETURNING *
+      `,
+      [employeeId, approverId]
+    );
 
-  if (result.rows.length === 0) {
-    return null;
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      employeeId: row.employee_id,
+      approverId: row.approver_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  } catch (error) {
+    // If duplicate, just return null (routing already exists)
+    if (error.message.includes('duplicate key')) {
+      return null;
+    }
+    throw error;
   }
-
-  const row = result.rows[0];
-  return {
-    id: row.id,
-    employeeId: row.employee_id,
-    approverId: row.approver_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
 };
 
 const removeEmployeeRouting = async (id) => {
@@ -946,11 +931,27 @@ const removeEmployeeRouting = async (id) => {
   return true;
 };
 
+const updateTravelRequestSettled = async (id, settled) => {
+  await query(
+    `
+      UPDATE travel_requests
+      SET settled = $1
+      WHERE id = $2
+    `,
+    [settled, id]
+  );
+  return true;
+};
+
 const getPendingTravelRequestCountForUser = async (userId, userRole) => {
   let result;
-  
-  if (userRole === 'admin' || userRole === 'ceo' || userRole === 'finance') {
-    // Admin, CEO, and finance can see all pending requests
+
+  // Check if user is a notification recipient
+  const notificationSettings = await getTravelNotificationSettings();
+  const isNotificationRecipient = notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.includes(userId);
+
+  if (userRole === 'admin' || userRole === 'ceo' || userRole === 'finance' || isNotificationRecipient) {
+    // Admin, CEO, finance, and notification recipients can see all pending requests
     result = await query(
       `
         SELECT COUNT(*) as count
@@ -976,7 +977,7 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
       result = { rows: [{ count: 0 }] };
     }
   } else {
-    // Regular employees can only see requests where they are the designated approver
+    // Regular employees can only see requests where they are one of the designated approvers
     result = await query(
       `
         SELECT COUNT(*) as count
@@ -987,7 +988,81 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
       [userId]
     );
   }
-  
+
+  return parseInt(result.rows[0].count, 10);
+};
+
+const markTravelRequestAsViewed = async (travelRequestId, userId) => {
+  await query(
+    `
+      INSERT INTO travel_request_views (travel_request_id, user_id)
+      VALUES ($1, $2)
+      ON CONFLICT (travel_request_id, user_id) DO UPDATE SET viewed_at = NOW()
+    `,
+    [travelRequestId, userId]
+  );
+  return true;
+};
+
+const getPendingTravelRequestCountForUserExcludingViewed = async (userId, userRole, userPositionTitle) => {
+  let result;
+
+  // Check if user has access to view all travel requests
+  const notificationSettings = await getTravelNotificationSettings();
+  const canViewAll = notificationSettings && notificationSettings.viewAllTravelRequestsIds && notificationSettings.viewAllTravelRequestsIds.includes(userId);
+
+  const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
+
+  if (oversightRoles.includes(userRole) || userPositionTitle === 'Administration' || canViewAll) {
+    // Admin, CEO, finance, membership officer, administrator, and users with view-all access can see all pending requests
+    // Exclude those they've already viewed
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests tr
+        WHERE tr.status = 'pending'
+        AND tr.id NOT IN (
+          SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
+        )
+      `,
+      [userId]
+    );
+  } else if (userRole === 'supervisor') {
+    // Supervisors can see pending requests from their team members
+    try {
+      result = await query(
+        `
+          SELECT COUNT(*) as count
+          FROM travel_requests tr
+          INNER JOIN users u ON u.id = tr.user_id
+          WHERE tr.status = 'pending' AND u.employee_supervisor_id = $1
+          AND tr.id NOT IN (
+            SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
+          )
+        `,
+        [userId]
+      );
+    } catch (error) {
+      console.warn('employee_supervisor_id column does not exist, using fallback query');
+      // Fallback: return 0 if column doesn't exist
+      result = { rows: [{ count: 0 }] };
+    }
+  } else {
+    // Regular employees can only see requests where they are one of the designated approvers
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests tr
+        INNER JOIN travel_employee_routing ter ON ter.employee_id = tr.user_id
+        WHERE tr.status = 'pending' AND ter.approver_id = $1
+        AND tr.id NOT IN (
+          SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
+        )
+      `,
+      [userId]
+    );
+  }
+
   return parseInt(result.rows[0].count, 10);
 };
 
@@ -1015,6 +1090,9 @@ module.exports = {
   addEmployeeRouting,
   removeEmployeeRouting,
   getPendingTravelRequestCountForUser,
+  getPendingTravelRequestCountForUserExcludingViewed,
+  markTravelRequestAsViewed,
+  updateTravelRequestSettled,
   getSummaryStats,
   getSummaryStatsForUser
 };
