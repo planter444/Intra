@@ -5,6 +5,34 @@ const periodLabelOf = (period) => {
   return Number.isNaN(date.getTime()) ? period : date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 };
 
+// Get correct DSA currency based on travel category
+const getCorrectDSACurrency = (dbCurrency, travelCategory) => {
+  if (!travelCategory) return dbCurrency || 'KES';
+
+  const category = travelCategory.toLowerCase();
+  if (category === 'local movement' || category === 'local') {
+    return 'KES';
+  }
+  if (category === 'within kenya') {
+    return 'KES';
+  }
+  if (category === 'east africa') {
+    return 'USD';
+  }
+  if (category === 'international') {
+    return 'USD';
+  }
+
+  return dbCurrency || 'KES';
+};
+
+// Helper to check if request is local movement
+const checkIsLocalMovement = (travelCategory) => {
+  if (!travelCategory) return false;
+  const category = travelCategory.toLowerCase();
+  return category === 'local movement' || category === 'local';
+};
+
 const ensureBrevoConfigured = () => {
   if (!env.brevoApiKey || !env.brevoSenderEmail) {
     const error = new Error('Brevo email delivery is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL to enable system emails.');
@@ -13,8 +41,23 @@ const ensureBrevoConfigured = () => {
   }
 };
 
-const sendBrevoEmail = async ({ to, subject, htmlContent }) => {
+const sendBrevoEmail = async ({ to, bcc, subject, htmlContent }) => {
   ensureBrevoConfigured();
+
+  const body = {
+    sender: {
+      email: env.brevoSenderEmail,
+      name: env.brevoSenderName
+    },
+    to,
+    subject,
+    htmlContent
+  };
+
+  // Add BCC if provided
+  if (bcc && bcc.length > 0) {
+    body.bcc = bcc;
+  }
 
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -22,15 +65,7 @@ const sendBrevoEmail = async ({ to, subject, htmlContent }) => {
       'Content-Type': 'application/json',
       'api-key': env.brevoApiKey
     },
-    body: JSON.stringify({
-      sender: {
-        email: env.brevoSenderEmail,
-        name: env.brevoSenderName
-      },
-      to,
-      subject,
-      htmlContent
-    })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -220,7 +255,7 @@ const sendSupervisorDecisionToCeoEmail = async ({ recipients, request, superviso
   });
 };
 
-const buildTravelCard = ({ employeeName, employeeNo, departmentName, origin, destination, startDate, endDate, reason, estimatedCost, receiptAmount, receiptDescription }) => `
+const buildTravelCard = ({ employeeName, employeeNo, departmentName, origin, destination, startDate, endDate, reason, estimatedCost, receiptAmount, receiptDescription, supervisorComment, ceoComment }) => `
   <div style="margin: 22px 0; overflow: hidden; border-radius: 20px; border: 1px solid #dbeafe; background: #ffffff; box-shadow: 0 18px 45px rgba(30,64,175,0.12);">
     <div style="background: linear-gradient(135deg, #1e3a8a, #3b82f6); padding: 18px 22px; color: #ffffff;">
       <p style="margin: 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.82;">KEREA HRMS Travel Desk</p>
@@ -233,7 +268,9 @@ const buildTravelCard = ({ employeeName, employeeNo, departmentName, origin, des
       <p style="margin: 0 0 10px;"><strong>Dates:</strong> ${startDate}${endDate && endDate !== startDate ? ` to ${endDate}` : ''}</p>
       ${estimatedCost ? `<p style="margin: 0 0 10px;"><strong>Estimated cost:</strong> ${estimatedCost}</p>` : ''}
       ${receiptAmount ? `<p style="margin: 0 0 10px;"><strong>Receipt amount:</strong> ${receiptAmount}</p>` : ''}
-      ${reason ? `<p style="margin: 0 0 10px;"><strong>Reason:</strong> ${reason}</p>` : ''}
+      ${reason ? `<p style="margin: 0 0 10px;"><strong>Reason for Travel:</strong> ${reason}</p>` : ''}
+      ${supervisorComment ? `<p style="margin: 0 0 10px;"><strong>Supervisor Comment:</strong> ${supervisorComment}</p>` : ''}
+      ${ceoComment ? `<p style="margin: 0 0 10px;"><strong>CEO Comment:</strong> ${ceoComment}</p>` : ''}
       ${receiptDescription ? `<p style="margin: 0;"><strong>Receipt description:</strong> ${receiptDescription}</p>` : ''}
     </div>
   </div>
@@ -270,7 +307,7 @@ const sendTravelReceiptNotificationEmail = async ({ recipients, travelRequest, r
   });
 };
 
-const sendTravelRequestSubmittedEmail = async ({ recipients, travelRequest, applicantName }) => {
+const sendTravelRequestSubmittedEmail = async ({ recipients, travelRequest, applicantName, isCEOApprover = false }) => {
   const to = (recipients || [])
     .filter((recipient) => recipient?.email)
     .map((recipient) => ({ email: recipient.email, name: recipient.fullName || recipient.email }));
@@ -280,7 +317,7 @@ const sendTravelRequestSubmittedEmail = async ({ recipients, travelRequest, appl
   }
 
   const requestUrl = buildTravelRequestUrl(travelRequest.id);
-  
+
   // Format dates without time
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Not specified';
@@ -297,50 +334,105 @@ const sendTravelRequestSubmittedEmail = async ({ recipients, travelRequest, appl
   const endDate = formatDate(travelRequest.endDate || travelRequest.end_date);
   const currency = travelRequest.currency || 'KES';
   const reason = travelRequest.reason || 'Not specified';
+  const travelCategory = travelRequest.travelCategory || travelRequest.travel_category || '';
 
-  // Calculate total cost grouped by currency
-  const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
-  const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
-  const transportationCost = travelRequest.transportationCost || 0;
-  const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+  // Adjust email subject based on whether CEO is the first approver
+  const approvalStage = isCEOApprover ? 'CEO' : 'Supervisor';
 
-  // Group amounts by currency
+  // Calculate total cost based on travel type and category
+  const isLocalMovement = checkIsLocalMovement(travelCategory);
+  const isReimbursement = travelType.toLowerCase().includes('reimbursement');
+
+  let totalCostDisplay = 'Not specified';
   const amountsByCurrency = {};
 
-  // Add DSA
-  if (dsaAmount > 0) {
-    const dsaCurrency = travelRequest.dsaCurrency || 'KES';
-    amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
-  }
+  if (isLocalMovement) {
+    // Local movement: total = DSA + transportationCost (NO accommodation, NO other costs)
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
 
-  // Add accommodation
-  if (accommodationAmount > 0) {
-    const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
-    amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
-  }
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
 
-  // Add transportation
-  if (transportationCost > 0) {
-    amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
-  }
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+  } else if (isReimbursement) {
+    // Official reimbursement: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
 
-  // Add estimated cost (other costs)
-  if (estimatedCost > 0) {
-    amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
+  } else {
+    // Official booking: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
   }
 
   // Format total by currency
-  const totalCostDisplay = Object.entries(amountsByCurrency)
-    .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
-    .join(' + ');
+  if (Object.keys(amountsByCurrency).length > 0) {
+    totalCostDisplay = Object.entries(amountsByCurrency)
+      .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
+      .join(' + ');
+  }
 
   await sendBrevoEmail({
     to,
-    subject: `New travel request from ${applicantName}`,
+    subject: `New travel request from ${applicantName} - ${approvalStage} Review Required`,
     htmlContent: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #166534;">New Travel Request Submitted</h2>
-        <p style="margin: 0 0 18px;">${applicantName} has submitted a new travel request for your review.</p>
+        <p style="margin: 0 0 18px;">${applicantName} has submitted a new travel request for your review${isCEOApprover ? ' as CEO' : ''}.</p>
         <p style="margin: 0 0 18px;">
           <strong>Travel Type:</strong> ${travelType}<br>
           <strong>Origin:</strong> ${origin}<br>
@@ -353,6 +445,555 @@ const sendTravelRequestSubmittedEmail = async ({ recipients, travelRequest, appl
         <p style="margin: 0 0 18px;">
           <a href="${requestUrl}" style="background-color: #166534; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Review Travel Request</a>
         </p>
+      </div>
+    `
+  });
+};
+
+const sendTravelSupervisorApprovedEmail = async ({ toEmail, toName, travelRequest, supervisorName, supervisorComment }) => {
+  const requestUrl = buildTravelRequestUrl(travelRequest.id);
+
+  // Format dates without time
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Not specified';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const origin = travelRequest.origin || 'Not specified';
+  const destination = travelRequest.destination || 'Not specified';
+  const startDate = formatDate(travelRequest.startDate || travelRequest.start_date);
+  const endDate = formatDate(travelRequest.endDate || travelRequest.end_date);
+  const reason = travelRequest.reason || 'Not specified';
+
+  await sendBrevoEmail({
+    to: [
+      {
+        email: toEmail,
+        name: toName || toEmail
+      }
+    ],
+    subject: 'Your travel request has been approved by your supervisor',
+    htmlContent: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #16a34a, #22c55e); padding: 24px; border-radius: 12px 12px 0 0; color: #ffffff;">
+          <h1 style="margin: 0; font-size: 24px; line-height: 1.3;">Travel Request Approved by Supervisor</h1>
+          <p style="margin: 8px 0 0; opacity: 0.9;">KEREA HRMS Travel Management</p>
+        </div>
+        <div style="background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <p style="margin: 0 0 20px; font-size: 16px; color: #1e293b;">
+            Hello <strong>${toName || 'there'}</strong>, your travel request has been approved by your supervisor <strong>${supervisorName}</strong> and is now awaiting CEO approval.
+          </p>
+
+          <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <h3 style="margin: 0 0 12px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Travel Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 140px;">Origin:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${origin}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Destination:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${destination}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Start Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${startDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">End Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${endDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Reason for Travel:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${reason}</td>
+              </tr>
+              ${supervisorComment ? `
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Supervisor Comment:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${supervisorComment}</td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <p style="margin: 0; color: #64748b; font-size: 14px;">You will be notified once the CEO provides final approval.</p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; color: #94a3b8; font-size: 12px;">
+          This is an automated email from KEREA HRMS
+        </div>
+      </div>
+    `
+  });
+};
+
+const sendTravelCEOApprovedEmail = async ({ toEmail, toName, travelRequest, ceoName, ceoComment, supervisorComment }) => {
+  const requestUrl = buildTravelRequestUrl(travelRequest.id);
+
+  // Format dates without time
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Not specified';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  // Calculate total cost based on travel type and category
+  const travelType = travelRequest.travelType || travelRequest.travel_type || 'Not specified';
+  const travelCategory = travelRequest.travelCategory || travelRequest.travel_category || '';
+  const isLocalMovement = travelCategory.toLowerCase().includes('local');
+  const isReimbursement = travelType.toLowerCase().includes('reimbursement');
+  const currency = travelRequest.currency || 'KES';
+
+  let totalCostDisplay = 'Not specified';
+  const amountsByCurrency = {};
+
+  if (isLocalMovement) {
+    // Local movement: total = DSA + transportationCost (NO accommodation, NO other costs)
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+  } else if (isReimbursement) {
+    // Official reimbursement: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
+  } else {
+    // Official booking: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
+  }
+
+  // Format total by currency
+  if (Object.keys(amountsByCurrency).length > 0) {
+    totalCostDisplay = Object.entries(amountsByCurrency)
+      .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
+      .join(' + ');
+  }
+
+  const origin = travelRequest.origin || 'Not specified';
+  const destination = travelRequest.destination || 'Not specified';
+  const startDate = formatDate(travelRequest.startDate || travelRequest.start_date);
+  const endDate = formatDate(travelRequest.endDate || travelRequest.end_date);
+  const reason = travelRequest.reason || 'Not specified';
+
+  await sendBrevoEmail({
+    to: [
+      {
+        email: toEmail,
+        name: toName || toEmail
+      }
+    ],
+    subject: 'Your travel request has been approved',
+    htmlContent: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #16a34a, #22c55e); padding: 24px; border-radius: 12px 12px 0 0; color: #ffffff;">
+          <h1 style="margin: 0; font-size: 24px; line-height: 1.3;">Travel Request Approved</h1>
+          <p style="margin: 8px 0 0; opacity: 0.9;">KEREA HRMS Travel Management</p>
+        </div>
+        <div style="background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <p style="margin: 0 0 20px; font-size: 16px; color: #1e293b;">
+            Hello <strong>${toName || 'there'}</strong>, your travel request has been approved by the CEO <strong>${ceoName}</strong>.
+          </p>
+
+          <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <h3 style="margin: 0 0 12px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Travel Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 140px;">Origin:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${origin}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Destination:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${destination}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Start Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${startDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">End Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${endDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Reason for Travel:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${reason}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Approved Amount:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${totalCostDisplay || 'Not specified'}</td>
+              </tr>
+              ${supervisorComment ? `
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Supervisor Comment:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${supervisorComment}</td>
+              </tr>
+              ` : ''}
+              ${ceoComment ? `
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">CEO Comment:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${ceoComment}</td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <p style="margin: 0; color: #64748b; font-size: 14px;">You can proceed with your travel arrangements.</p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; color: #94a3b8; font-size: 12px;">
+          This is an automated email from KEREA HRMS
+        </div>
+      </div>
+    `
+  });
+};
+
+const sendTravelSupervisorApprovedToCEOEmail = async ({ toEmail, toName, travelRequest, supervisorName, applicantName, supervisorComment }) => {
+  const requestUrl = buildTravelRequestUrl(travelRequest.id);
+
+  // Format dates without time
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Not specified';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const origin = travelRequest.origin || 'Not specified';
+  const destination = travelRequest.destination || 'Not specified';
+  const startDate = formatDate(travelRequest.startDate || travelRequest.start_date);
+  const endDate = formatDate(travelRequest.endDate || travelRequest.end_date);
+  const reason = travelRequest.reason || 'Not specified';
+
+  // Calculate total cost based on travel type and category
+  const travelType = travelRequest.travelType || travelRequest.travel_type || 'Not specified';
+  const travelCategory = travelRequest.travelCategory || travelRequest.travel_category || '';
+  const isLocalMovement = travelCategory.toLowerCase().includes('local');
+  const isReimbursement = travelType.toLowerCase().includes('reimbursement');
+  const currency = travelRequest.currency || 'KES';
+
+  let totalCostDisplay = 'Not specified';
+  const amountsByCurrency = {};
+
+  if (isLocalMovement) {
+    // Local movement: total = DSA + transportationCost (NO accommodation, NO other costs)
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+  } else if (isReimbursement) {
+    // Official reimbursement: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
+  } else {
+    // Official booking: total = DSA + accommodation + transportation + other costs
+    const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+    const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+    const transportationCost = travelRequest.transportationCost || 0;
+    const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+    // Add DSA with its own currency (override from travel category)
+    if (dsaAmount > 0) {
+      const dsaCurrency = getCorrectDSACurrency(travelRequest.dsaCurrency, travelCategory);
+      amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+    }
+
+    // Add accommodation with its own currency (NOT for local movement)
+    if (!isLocalMovement && accommodationAmount > 0) {
+      const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+      amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+    }
+
+    // Add transportation with its own currency
+    if (transportationCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+    }
+
+    // Add other costs with its own currency (NOT for local movement)
+    if (!isLocalMovement && estimatedCost > 0) {
+      amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+    }
+  }
+
+  // Format total by currency
+  if (Object.keys(amountsByCurrency).length > 0) {
+    totalCostDisplay = Object.entries(amountsByCurrency)
+      .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
+      .join(' + ');
+  }
+
+  await sendBrevoEmail({
+    to: [
+      {
+        email: toEmail,
+        name: toName || toEmail
+      }
+    ],
+    subject: `Travel request for ${applicantName} awaiting CEO approval`,
+    htmlContent: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #2563eb, #3b82f6); padding: 24px; border-radius: 12px 12px 0 0; color: #ffffff;">
+          <h1 style="margin: 0; font-size: 24px; line-height: 1.3;">Travel Request Awaiting CEO Approval</h1>
+          <p style="margin: 8px 0 0; opacity: 0.9;">KEREA HRMS Travel Management</p>
+        </div>
+        <div style="background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <p style="margin: 0 0 20px; font-size: 16px; color: #1e293b;">
+            Hello <strong>${toName || 'there'}</strong>, travel request for <strong>${applicantName}</strong> has been approved by supervisor <strong>${supervisorName}</strong> and is now awaiting your approval.
+          </p>
+
+          <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <h3 style="margin: 0 0 12px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Travel Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 140px;">Staff Member:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${applicantName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Origin:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${origin}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Destination:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${destination}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Start Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${startDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">End Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${endDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Reason for Travel:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${reason}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Total Cost:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${totalCostDisplay}</td>
+              </tr>
+              ${supervisorComment ? `
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Supervisor Comment:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${supervisorComment}</td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <p style="margin: 0; color: #64748b; font-size: 14px;">Please review and approve or reject this travel request.</p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; color: #94a3b8; font-size: 12px;">
+          This is an automated email from KEREA HRMS
+        </div>
+      </div>
+    `
+  });
+};
+
+const sendTravelCEOApprovedToRecipientsEmail = async ({ bcc, travelRequest, staffName, ceoName }) => {
+  // Format dates without time
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'Not specified';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  // Calculate total cost grouped by currency
+  const dsaAmount = (travelRequest.dsaProvided ? 0 : travelRequest.dsaAmount) || 0;
+  const accommodationAmount = (travelRequest.accommodationProvided ? 0 : travelRequest.accommodationAmount) || 0;
+  const transportationCost = travelRequest.transportationCost || 0;
+  const estimatedCost = travelRequest.estimatedCost || travelRequest.estimated_cost || 0;
+
+  // Group amounts by currency
+  const amountsByCurrency = {};
+
+  if (dsaAmount > 0) {
+    const dsaCurrency = travelRequest.dsaCurrency || 'KES';
+    amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsaAmount;
+  }
+
+  if (accommodationAmount > 0) {
+    const accommodationCurrency = travelRequest.accommodationCurrency || 'KES';
+    amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodationAmount;
+  }
+
+  if (transportationCost > 0) {
+    const currency = travelRequest.currency || 'KES';
+    amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportationCost;
+  }
+
+  if (estimatedCost > 0) {
+    const currency = travelRequest.currency || 'KES';
+    amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + estimatedCost;
+  }
+
+  const totalCostDisplay = Object.entries(amountsByCurrency)
+    .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
+    .join(' + ');
+
+  const origin = travelRequest.origin || 'Not specified';
+  const destination = travelRequest.destination || 'Not specified';
+  const startDate = formatDate(travelRequest.startDate || travelRequest.start_date);
+  const endDate = formatDate(travelRequest.endDate || travelRequest.end_date);
+  const reason = travelRequest.reason || 'Not specified';
+
+  // Convert bcc array to Brevo format
+  const bccRecipients = (bcc || [])
+    .filter((recipient) => recipient?.email)
+    .map((recipient) => ({ email: recipient.email, name: recipient.fullName || recipient.email }));
+
+  if (!bccRecipients.length) {
+    return;
+  }
+
+  await sendBrevoEmail({
+    to: [
+      {
+        email: env.brevoSenderEmail,
+        name: env.brevoSenderName
+      }
+    ],
+    bcc: bccRecipients,
+    subject: `Travel request for ${staffName} has been approved`,
+    htmlContent: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #16a34a, #22c55e); padding: 24px; border-radius: 12px 12px 0 0; color: #ffffff;">
+          <h1 style="margin: 0; font-size: 24px; line-height: 1.3;">Travel Request Approved</h1>
+          <p style="margin: 8px 0 0; opacity: 0.9;">KEREA HRMS Travel Management</p>
+        </div>
+        <div style="background: #ffffff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <p style="margin: 0 0 20px; font-size: 16px; color: #1e293b;">
+            Travel request for <strong>${staffName}</strong> has been approved by the CEO <strong>${ceoName}</strong>.
+          </p>
+
+          <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <h3 style="margin: 0 0 12px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Travel Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 140px;">Staff Member:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${staffName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Origin:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${origin}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Destination:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${destination}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Start Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${startDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">End Date:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${endDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Approved Amount:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${totalCostDisplay || 'Not specified'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Reason:</td>
+                <td style="padding: 8px 0; color: #1e293b; font-size: 14px; font-weight: 500;">${reason}</td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="margin: 0; color: #64748b; font-size: 14px;">Please proceed with necessary administrative arrangements.</p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; color: #94a3b8; font-size: 12px;">
+          This is an automated email from KEREA HRMS
+        </div>
       </div>
     `
   });
@@ -717,6 +1358,10 @@ module.exports = {
   sendAppraisalToCeoEmail,
   sendTravelRequestSubmittedEmail,
   sendTravelDecisionEmail,
+  sendTravelSupervisorApprovedEmail,
+  sendTravelSupervisorApprovedToCEOEmail,
+  sendTravelCEOApprovedEmail,
+  sendTravelCEOApprovedToRecipientsEmail,
   sendPayslipGeneratedEmail,
   sendTimesheetSubmittedEmail,
   sendTimesheetApprovedEmail,

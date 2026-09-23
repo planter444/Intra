@@ -58,6 +58,15 @@ const getDSARate = (designation, travelCategory, travelTypeDetail, settings) => 
       return null;
     }
 
+    // Handle local movement
+    if (travelCategory === 'Local Movement' || travelCategory === 'Local') {
+      return {
+        rate: dsaSettings?.localMovementRate || 2000,
+        currency: 'KES',
+        unit: 'per day'
+      };
+    }
+
     if (travelCategory === 'Within Kenya') {
       return {
         rate: dsaSettings?.kenyaRate || 2000,
@@ -385,6 +394,24 @@ export default function TravelApplyPage() {
       return;
     }
 
+    // Calculate DSA rate from settings if not provided
+    let dsaRate = form.dsaRate ? Number(form.dsaRate) : null;
+    let dsaCurrency = form.dsaCurrency || 'KES';
+    if (!dsaRate && form.travelCategory && settings?.travel?.dsa) {
+      const dsaRateInfo = getDSARate(form.designation, form.travelCategory, form.travelTypeDetail, settings);
+      if (dsaRateInfo) {
+        dsaRate = dsaRateInfo.rate;
+        dsaCurrency = dsaRateInfo.currency;
+      }
+    }
+
+    // Calculate accommodation rate from settings if not provided
+    let accommodationRate = form.accommodationRate ? Number(form.accommodationRate) : null;
+    let accommodationCurrency = form.accommodationCurrency || 'KES';
+    if (!accommodationRate && settings?.travel?.accommodation?.rate) {
+      accommodationRate = settings.travel.accommodation.rate;
+      accommodationCurrency = settings.travel.accommodation.currency || 'KES';
+    }
 
     try {
       const requestData = {
@@ -394,20 +421,30 @@ export default function TravelApplyPage() {
         origin: form.origin,
         destination: form.destination,
         reason: form.reason,
-        estimatedCost: form.estimatedCost ? Number(form.estimatedCost) : null,
+        estimatedCost: null, // For official travel, estimatedCost is other costs (not transportation)
+        transportationCost: form.estimatedCost ? Number(form.estimatedCost) : null, // Save transportation cost to correct field
         currency: form.currency,
         designation: form.designation,
         travelCategory: form.travelCategory,
         travelTypeDetail: form.travelTypeDetail,
         projectProgramme: form.projectProgramme,
-        dsaRate: form.dsaRate ? Number(form.dsaRate) : null,
-        dsaCurrency: form.dsaCurrency,
+        dsaRate: dsaRate,
+        dsaCurrency: dsaCurrency,
         dsaAmount: form.dsaAmount ? Number(form.dsaAmount) : null,
-        accommodationRate: form.accommodationRate ? Number(form.accommodationRate) : null,
-        accommodationCurrency: form.accommodationCurrency,
+        accommodationRate: accommodationRate,
+        accommodationCurrency: accommodationCurrency,
         accommodationAmount: form.accommodationAmount ? Number(form.accommodationAmount) : null,
         selectedHotel: form.selectedHotel || null
       };
+
+      console.log('Submitting official travel booking with data:', {
+        travelType: requestData.travelType,
+        travelCategory: requestData.travelCategory,
+        travelTypeDetail: requestData.travelTypeDetail,
+        transportationCost: requestData.transportationCost,
+        dsaAmount: requestData.dsaAmount,
+        accommodationAmount: requestData.accommodationAmount
+      });
 
       let request;
       
@@ -430,6 +467,8 @@ export default function TravelApplyPage() {
         // Regular request without supporting document
         request = await createTravelRequest(requestData);
       }
+
+      console.log('Travel request created with status:', request.status, 'and category:', request.travelCategory);
 
       setSubmittedRequestId(request.id);
 
@@ -459,7 +498,7 @@ export default function TravelApplyPage() {
         description: 'Your travel request has been submitted successfully.'
       });
       setForm(initialForm);
-      setTimeout(() => navigate('/travel/official'), 2000);
+      setTimeout(() => navigate('/travel'), 2000);
     } catch (error) {
       setNotice({
         open: true,

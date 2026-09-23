@@ -73,6 +73,13 @@ export default function LocalMovementReimbursementPage() {
         projectProgramme: form.projectProgramme || null // Convert empty string to null
       };
 
+      console.log('Submitting local movement reimbursement with data:', {
+        transportationCost,
+        dsaAmount,
+        dsaProvided: form.dsaProvided,
+        fullDayEvent: form.fullDayEvent
+      });
+
       const request = await createTravelRequest(payload);
 
       // Upload receipts after creating the request
@@ -96,7 +103,7 @@ export default function LocalMovementReimbursementPage() {
         title: 'Local movement reimbursement submitted',
         description: 'Your local movement reimbursement request has been submitted successfully.'
       });
-      setTimeout(() => navigate('/travel/local'), 2000);
+      setTimeout(() => navigate('/travel'), 2000);
     } catch (error) {
       setNotice({
         open: true,

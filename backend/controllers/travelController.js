@@ -3,7 +3,7 @@ const auditModel = require('../models/auditModel');
 const travelModel = require('../models/travelModel');
 const { query } = require('../config/db');
 const { logAction } = require('../services/auditService');
-const { sendTravelRequestSubmittedEmail, sendTravelReceiptNotificationEmail, sendTravelDecisionEmail, buildTravelRequestUrl } = require('../services/mailService');
+const { sendTravelRequestSubmittedEmail, sendTravelReceiptNotificationEmail, sendTravelDecisionEmail, sendTravelSupervisorApprovedEmail, sendTravelSupervisorApprovedToCEOEmail, sendTravelCEOApprovedEmail, sendTravelCEOApprovedToRecipientsEmail, buildTravelRequestUrl } = require('../services/mailService');
 const { deleteStoredDocument, getRemoteDocumentUrl, isRemoteStoragePath, resolveDocumentPath, saveDocument } = require('../services/documentService');
 
 const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
@@ -26,7 +26,17 @@ const canAccessTravelRequest = async (currentUser, request) => {
     return true;
   }
 
-  return currentUser.role === 'supervisor' && String(request.employeeSupervisorId) === String(currentUser.id);
+  // Check if user is a designated approver for this employee (regardless of role)
+  try {
+    const approverIds = await travelModel.getApproverForEmployee(request.userId);
+    if (approverIds && approverIds.includes(currentUser.id)) {
+      return true;
+    }
+  } catch (error) {
+    console.warn('Failed to check approver access:', error.message);
+  }
+
+  return false;
 };
 
 const canRequesterModify = (currentUser, request) => {
@@ -39,7 +49,7 @@ const canRequesterModify = (currentUser, request) => {
     return false;
   }
 
-  return ['pending', 'rejected'].includes(request.status);
+  return ['pending', 'pending_ceo', 'rejected'].includes(request.status);
 };
 
 const canUpdateReceiptStatus = (currentUser, receipt) => {
@@ -102,6 +112,16 @@ const getTravelRequest = async (req, res, next) => {
 
 const createTravelRequest = async (req, res, next) => {
   try {
+    console.log('createTravelRequest - Received body:', Object.keys(req.body));
+    console.log('createTravelRequest - File:', req.file ? { name: req.file.originalname, size: req.file.size, mimetype: req.file.mimetype } : 'No file');
+    console.log('createTravelRequest - travelCategory:', req.body.travelCategory);
+    console.log('createTravelRequest - dsaRate:', req.body.dsaRate);
+    console.log('createTravelRequest - dsaCurrency:', req.body.dsaCurrency);
+    console.log('createTravelRequest - dsaAmount:', req.body.dsaAmount);
+    console.log('createTravelRequest - accommodationRate:', req.body.accommodationRate);
+    console.log('createTravelRequest - accommodationCurrency:', req.body.accommodationCurrency);
+    console.log('createTravelRequest - accommodationAmount:', req.body.accommodationAmount);
+
     const { travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent } = req.body;
 
     if (!startDate || !endDate || !origin || !destination || !reason) {
@@ -121,11 +141,13 @@ const createTravelRequest = async (req, res, next) => {
     // Handle supporting document upload for both booking and reimbursement
     if (req.file) {
       try {
+        console.log('Attempting to save document...');
         const { storedName, targetPath } = await saveDocument({
           userId: String(req.user.id),
           folderType: 'travel',
           file: req.file
         });
+        console.log('Document saved successfully:', { storedName, targetPath });
 
         supportingDocumentPath = targetPath;
 
@@ -140,12 +162,14 @@ const createTravelRequest = async (req, res, next) => {
             [req.user.id, req.user.id, req.file.originalname, storedName, req.file.mimetype, req.file.size, targetPath]
           );
           supportingDocumentId = documentResult.rows[0].id;
+          console.log('Document record created with ID:', supportingDocumentId);
         } catch (docError) {
           console.warn('Failed to create document record (will use direct path):', docError.message);
           // Continue without document record - we'll use the direct path
         }
       } catch (uploadError) {
         console.error('Failed to upload supporting document:', uploadError.message);
+        console.error('Upload error details:', uploadError);
         // Continue without the document - it's optional
       }
     }
@@ -153,6 +177,7 @@ const createTravelRequest = async (req, res, next) => {
     // Create travel request with new fields
     let request;
     try {
+      console.log('Creating travel request in database...');
       request = await travelModel.createTravelRequest({
         userId: req.user.id,
         travelType: travelType || 'booking',
@@ -179,25 +204,11 @@ const createTravelRequest = async (req, res, next) => {
         transportationCost: transportationCost || null,
         fullDayEvent: fullDayEvent || false
       });
+      console.log('Travel request created successfully:', request.id);
     } catch (dbError) {
-      // If the error is about new columns not existing, retry without them
-      if (dbError.message && (dbError.message.includes('designation') || dbError.message.includes('travel_category'))) {
-        console.warn('New travel columns not found, creating request without them');
-        request = await travelModel.createTravelRequest({
-          userId: req.user.id,
-          travelType: travelType || 'booking',
-          startDate,
-          endDate,
-          origin,
-          destination,
-          reason,
-          estimatedCost: estimatedCost || null,
-          currency: currency || 'KES',
-          supportingDocumentId: null
-        });
-      } else {
-        throw dbError;
-      }
+      console.error('Travel request creation failed:', dbError.message);
+      next(dbError);
+      return;
     }
 
     // Include receipts in the response
@@ -215,39 +226,36 @@ const createTravelRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
-    // Send email notification to approvers and notification recipients (best-effort)
+    // Send email notification to immediate supervisor only (best-effort)
     try {
       const approverIds = await travelModel.getApproverForEmployee(req.user.id);
       const recipients = [];
+      let isCEOFirstApprover = false;
 
-      // Add all approvers
+      // Add only the immediate supervisor (first approver) - not all approvers
       if (approverIds && approverIds.length > 0) {
+        // Only send to the first approver (immediate supervisor)
+        const firstApproverId = approverIds[0];
         const approverResults = await query(
-          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
-          [approverIds]
+          `SELECT id, first_name, last_name, email, role FROM users WHERE id = $1`,
+          [firstApproverId]
         );
-        approverResults.rows.forEach(approver => {
-          recipients.push({ id: approver.id, fullName: `${approver.first_name} ${approver.last_name}`, email: approver.email });
-        });
-      }
-
-      // Add notification recipients
-      const notificationSettings = await travelModel.getTravelNotificationSettings();
-      if (notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.length > 0) {
-        const notificationResults = await query(
-          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
-          [notificationSettings.recipientIds]
-        );
-        notificationResults.rows.forEach(recipient => {
-          recipients.push({ id: recipient.id, fullName: `${recipient.first_name} ${recipient.last_name}`, email: recipient.email });
-        });
+        if (approverResults.rows.length > 0) {
+          const approver = approverResults.rows[0];
+          recipients.push({ id: approver.id, fullName: `${approver.first_name} ${approver.last_name}`, email: approver.email, role: approver.role });
+          isCEOFirstApprover = approver.role === 'ceo';
+        }
+        console.log('Sending travel request notification to immediate supervisor only:', recipients.map(r => r.fullName), 'isCEO:', isCEOFirstApprover);
+      } else {
+        console.log('No approvers found for employee:', req.user.id);
       }
 
       if (recipients.length > 0) {
         await sendTravelRequestSubmittedEmail({
           recipients,
           travelRequest: request,
-          applicantName: req.user.fullName
+          applicantName: req.user.fullName,
+          isCEOApprover: isCEOFirstApprover
         });
       }
     } catch (emailError) {
@@ -387,7 +395,7 @@ const decideTravelRequest = async (req, res, next) => {
       return res.status(400).json({ message: 'Decision must be approve or reject.' });
     }
 
-    if (!['pending', 'rejected'].includes(request.status)) {
+    if (!['pending', 'pending_ceo', 'rejected'].includes(request.status)) {
       return res.status(400).json({ message: 'Only pending or rejected travel requests can be actioned.' });
     }
 
@@ -408,14 +416,48 @@ const decideTravelRequest = async (req, res, next) => {
     }
 
     const normalizedComment = typeof comment === 'string' ? comment.trim() : '';
-    const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
+    const isCEO = req.user.role === 'ceo';
+    
+    // Determine next status based on current status and role
+    let nextStatus;
+    if (decision === 'approve') {
+      if (isCEO) {
+        // CEO approving: if it's pending (CEO is first approver) or pending_ceo, approve directly
+        nextStatus = 'approved';
+      } else {
+        // Supervisor approval - move to CEO stage
+        nextStatus = 'pending_ceo';
+      }
+    } else {
+      nextStatus = 'rejected';
+    }
 
-    const updatedRequest = await travelModel.updateTravelRequestStatus({
+    // Save comment to appropriate field based on role
+    const updateData = {
       id,
       status: nextStatus,
-      approvedBy: req.user.id,
-      rejectionReason: decision === 'reject' ? normalizedComment || null : null
-    });
+      approvedBy: req.user.id
+    };
+
+    if (decision === 'reject') {
+      updateData.rejectionReason = normalizedComment || null;
+    } else if (isCEO) {
+      // CEO approval: save to ceo_comment AND preserve supervisor_comment
+      // Only set ceoComment if there's a comment, otherwise don't touch it
+      if (normalizedComment) {
+        updateData.ceoComment = normalizedComment;
+      }
+      // Preserve existing supervisor comment by not including it in updateData
+      // This way the model won't overwrite it with null
+    } else {
+      // Supervisor approval: save to supervisor_comment
+      // Only set supervisorComment if there's a comment
+      if (normalizedComment) {
+        updateData.supervisorComment = normalizedComment;
+      }
+    }
+
+    const updatedRequest = await travelModel.updateTravelRequestStatus(updateData);
 
     await logAction({
       actorUserId: req.user.id,
@@ -424,45 +466,97 @@ const decideTravelRequest = async (req, res, next) => {
       entityType: 'travel_request',
       entityId: String(id),
       description: `${req.user.fullName} ${decision}d travel request ${id}.`,
-      metadata: { comment: normalizedComment },
+      metadata: { comment: normalizedComment, isCEO },
       ipAddress: req.ip
     });
 
-    // Send email notification to applicant and notification recipients (best-effort)
+    // Send email notifications based on approval stage
     try {
       const applicantResult = await query(
         `SELECT id, first_name, last_name, email FROM users WHERE id = $1`,
         [request.userId]
       );
 
-      // Send to applicant
       if (applicantResult.rows.length > 0) {
         const applicant = applicantResult.rows[0];
-        await sendTravelDecisionEmail({
-          toEmail: applicant.email,
-          toName: `${applicant.first_name} ${applicant.last_name}`,
-          travelRequest: updatedRequest,
-          decision,
-          reviewerName: req.user.fullName,
-          comment: normalizedComment
-        });
-      }
+        const applicantName = `${applicant.first_name} ${applicant.last_name}`;
 
-      // Send to notification recipients
-      const notificationSettings = await travelModel.getTravelNotificationSettings();
-      if (notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.length > 0) {
-        const notificationResults = await query(
-          `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
-          [notificationSettings.recipientIds]
-        );
-        for (const recipient of notificationResults.rows) {
+        if (decision === 'reject') {
+          // Rejection: Send to applicant
           await sendTravelDecisionEmail({
-            toEmail: recipient.email,
-            toName: `${recipient.first_name} ${recipient.last_name}`,
+            toEmail: applicant.email,
+            toName: applicantName,
             travelRequest: updatedRequest,
             decision,
             reviewerName: req.user.fullName,
             comment: normalizedComment
+          });
+        } else if (isCEO) {
+          // CEO approved: Send to applicant and notification recipients
+          await sendTravelCEOApprovedEmail({
+            toEmail: applicant.email,
+            toName: applicantName,
+            travelRequest: updatedRequest,
+            ceoName: req.user.fullName,
+            ceoComment: normalizedComment,
+            supervisorComment: updatedRequest.supervisorComment
+          });
+
+          // Send to Travel Notification Recipients (BCC, excluding CEO and applicant)
+          const notificationSettings = await travelModel.getTravelNotificationSettings();
+          if (notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.length > 0) {
+            // Filter out the CEO and the applicant from notification recipients
+            const recipientIdsFiltered = notificationSettings.recipientIds.filter(id => 
+              String(id) !== String(req.user.id) && String(id) !== String(request.userId)
+            );
+
+            if (recipientIdsFiltered.length > 0) {
+              const notificationResults = await query(
+                `SELECT id, first_name, last_name, email FROM users WHERE id = ANY($1)`,
+                [recipientIdsFiltered]
+              );
+
+              const notificationRecipients = notificationResults.rows.map(r => ({
+                id: r.id,
+                fullName: `${r.first_name} ${r.last_name}`,
+                email: r.email
+              }));
+
+              await sendTravelCEOApprovedToRecipientsEmail({
+                bcc: notificationRecipients,
+                travelRequest: updatedRequest,
+                staffName: applicantName,
+                ceoName: req.user.fullName
+              });
+            }
+          }
+        } else {
+          // Supervisor approved: Send to CEO only (not to notification recipients)
+          const ceoResult = await query(
+            `SELECT id, first_name, last_name, email FROM users WHERE role = 'ceo' LIMIT 1`
+          );
+
+          if (ceoResult.rows.length > 0) {
+            const ceo = ceoResult.rows[0];
+            const ceoName = `${ceo.first_name} ${ceo.last_name}`;
+
+            await sendTravelSupervisorApprovedToCEOEmail({
+              toEmail: ceo.email,
+              toName: ceoName,
+              travelRequest: updatedRequest,
+              supervisorName: req.user.fullName,
+              applicantName: applicantName,
+              supervisorComment: normalizedComment
+            });
+          }
+
+          // Also notify the applicant that their request is awaiting CEO approval
+          await sendTravelSupervisorApprovedEmail({
+            toEmail: applicant.email,
+            toName: applicantName,
+            travelRequest: updatedRequest,
+            supervisorName: req.user.fullName,
+            supervisorComment: normalizedComment
           });
         }
       }

@@ -33,6 +33,8 @@ const mapTravelRequest = (row) => ({
   approvedBy: row.approved_by,
   approvedAt: row.approved_at,
   rejectionReason: row.rejection_reason,
+  supervisorComment: row.supervisor_comment || null,
+  ceoComment: row.ceo_comment || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   designation: row.designation || null,
@@ -72,6 +74,34 @@ const generateReferenceNumber = async () => {
 const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent }) => {
   const referenceNumber = await generateReferenceNumber();
 
+  // Check if the first approver is the CEO
+  let initialStatus = 'pending';
+  try {
+    const approvers = await getApproverForEmployee(userId);
+    if (approvers && approvers.length > 0) {
+      const firstApproverId = approvers[0];
+      const approverResult = await query(
+        `SELECT role FROM users WHERE id = $1`,
+        [firstApproverId]
+      );
+      if (approverResult.rows.length > 0 && approverResult.rows[0].role === 'ceo') {
+        initialStatus = 'pending_ceo';
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to check first approver, defaulting to pending:', error.message);
+  }
+
+  // Helper to normalize numeric values
+  const toNullableNumber = (value) => {
+    if (value === undefined || value === null) return null;
+    if (typeof value === 'string' && ['null', 'undefined', ''].includes(value.trim().toLowerCase())) {
+      return null;
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+
   let result;
   try {
     result = await query(
@@ -102,17 +132,143 @@ const createTravelRequest = async ({ userId, travelType, startDate, endDate, ori
           transportation_cost,
           full_day_event,
           reference_number,
-          status
+          status,
+          settled
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, false)
         RETURNING id
       `,
-      [userId, travelType || 'booking', startDate, endDate, origin, destination, reason, estimatedCost || null, currency || 'KES', supportingDocumentId || null, designation || null, travelCategory || null, travelTypeDetail || null, projectProgramme || null, dsaRate || null, dsaCurrency || 'KES', dsaAmount || null, dsaProvided || false, accommodationRate || null, accommodationCurrency || 'KES', accommodationAmount || null, accommodationProvided || false, transportationCost || null, fullDayEvent || false, referenceNumber]
+      [
+        userId,
+        travelType || 'booking',
+        startDate,
+        endDate,
+        origin,
+        destination,
+        reason,
+        toNullableNumber(estimatedCost),
+        currency || 'KES',
+        supportingDocumentId || null,
+        designation || null,
+        travelCategory || null,
+        travelTypeDetail || null,
+        projectProgramme || null,
+        toNullableNumber(dsaRate),
+        dsaCurrency || 'KES',
+        toNullableNumber(dsaAmount),
+        dsaProvided || false,
+        toNullableNumber(accommodationRate),
+        accommodationCurrency || 'KES',
+        toNullableNumber(accommodationAmount),
+        accommodationProvided || false,
+        toNullableNumber(transportationCost),
+        fullDayEvent || false,
+        referenceNumber,
+        initialStatus
+      ]
     );
   } catch (error) {
     console.error('Travel request insert error:', error.message);
-    // Don't use fallback - throw the actual error so it can be fixed properly
-    throw error;
+    console.error('Error details:', error);
+    
+    // Try fallback without new columns if column doesn't exist
+    if (error.message && (error.message.includes('column') || error.message.includes('does not exist') || error.message.includes('more expressions'))) {
+      console.warn('New columns not found, trying fallback insert with cost columns');
+      try {
+        result = await query(
+          `
+            INSERT INTO travel_requests (
+              user_id,
+              travel_type,
+              start_date,
+              end_date,
+              origin,
+              destination,
+              reason,
+              estimated_cost,
+              currency,
+              supporting_document_id,
+              travel_category,
+              dsa_amount,
+              dsa_provided,
+              transportation_cost,
+              accommodation_amount,
+              accommodation_provided,
+              full_day_event,
+              reference_number,
+              status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+              RETURNING id
+            `,
+            [
+              userId,
+              travelType || 'booking',
+              startDate,
+              endDate,
+              origin,
+              destination,
+              reason,
+              toNullableNumber(estimatedCost),
+              currency || 'KES',
+              supportingDocumentId || null,
+              travelCategory || null,
+              toNullableNumber(dsaAmount),
+              dsaProvided || false,
+              toNullableNumber(transportationCost),
+              toNullableNumber(accommodationAmount),
+              accommodationProvided || false,
+              fullDayEvent || false,
+              referenceNumber,
+              initialStatus
+            ]
+        );
+      } catch (fallbackError) {
+        console.error('Fallback insert also failed:', fallbackError.message);
+        // Try minimal fallback with just essential columns
+        try {
+          result = await query(
+            `
+              INSERT INTO travel_requests (
+                user_id,
+                travel_type,
+                start_date,
+                end_date,
+                origin,
+                destination,
+                reason,
+                estimated_cost,
+                currency,
+                supporting_document_id,
+                reference_number,
+                status
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              RETURNING id
+            `,
+            [
+              userId,
+              travelType || 'booking',
+              startDate,
+              endDate,
+              origin,
+              destination,
+              reason,
+              toNullableNumber(estimatedCost),
+              currency || 'KES',
+              supportingDocumentId || null,
+              referenceNumber,
+              initialStatus
+            ]
+          );
+        } catch (minimalError) {
+          console.error('Minimal fallback also failed:', minimalError.message);
+          throw minimalError;
+        }
+      }
+    } else {
+      throw error;
+    }
   }
 
   return findTravelRequestById(result.rows[0].id);
@@ -186,22 +342,72 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
       clauses.push(`tr.user_id = $${params.length}`);
     }
   } else if (role === 'supervisor') {
-    params.push(viewerId);
-    clauses.push(`(
-      tr.user_id = $${params.length}
-      OR tr.user_id IN (
-        SELECT id
-        FROM users
-        WHERE supervisor_id = $${params.length}
-          AND is_deleted = FALSE
-      )
-    )`);
+    // Supervisors see their own requests AND requests from employees they are designated approvers for
+    try {
+      const employeeRouting = await query(
+        `
+          SELECT DISTINCT employee_id
+          FROM travel_employee_routing
+          WHERE approver_id = $1
+        `,
+        [viewerId]
+      );
+      
+      const employeeIds = employeeRouting.rows.map(row => row.employee_id);
+      
+      if (employeeIds.length > 0) {
+        params.push(viewerId);
+        clauses.push(`(
+          tr.user_id = $${params.length}
+          OR tr.user_id = ANY($${params.length + 1})
+        )`);
+        params.push(employeeIds);
+      } else {
+        // If supervisor has no employees routed to them, only show their own requests
+        params.push(viewerId);
+        clauses.push(`tr.user_id = $${params.length}`);
+      }
+    } catch (error) {
+      // Fallback: only show own requests if routing query fails
+      params.push(viewerId);
+      clauses.push(`tr.user_id = $${params.length}`);
+    }
+  } else if (role === 'ceo') {
+    // CEO sees requests that have reached their stage (pending_ceo or beyond)
+    // AND pending requests where CEO is the designated approver in routing
+    if (!status) {
+      // If no status filter specified, show requests at CEO stage OR pending requests where CEO is approver
+      try {
+        const ceoRouting = await query(
+          `
+            SELECT DISTINCT employee_id
+            FROM travel_employee_routing
+            WHERE approver_id = $1
+          `,
+          [viewerId]
+        );
+
+        // CEO only sees requests that have reached their stage (pending_ceo or beyond)
+        // CEO does NOT see pending requests (those are still with supervisors)
+        clauses.push(`tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed')`);
+      } catch (error) {
+        // Fallback: only show requests at CEO stage if routing query fails
+        clauses.push(`tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed')`);
+      }
+    }
+    // If status is specified, use that filter (admin/ceo can filter by any status)
   } else if (!oversightRoles.includes(role) && !canViewAll && !hasAutomaticViewAll) {
     // For any other role not in oversight and without view-all access, only show own requests
     params.push(viewerId);
     clauses.push(`tr.user_id = $${params.length}`);
+  } else if (role === 'finance' || role === 'admin' || positionTitle === 'Administration') {
+    // Finance and admin should see CEO-approved requests AND their own requests (unless they have view-all access)
+    if (!canViewAll && !hasAutomaticViewAll) {
+      clauses.push(`(tr.status IN ('approved', 'in_progress', 'completed') OR tr.user_id = $${params.length + 1})`);
+      params.push(viewerId);
+    }
   }
-  // For oversight roles (admin, ceo, finance, it_officer), membership officer, administrator, and users with view-all access, no user filter - they see all
+  // For oversight roles (admin, finance, it_officer), membership officer, administrator, and users with view-all access, no user filter - they see all
 
   if (userId && (oversightRoles.includes(role) || canViewAll || hasAutomaticViewAll)) {
     params.push(userId);
@@ -234,28 +440,114 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
 
   const requests = [];
   for (const row of result.rows) {
-    requests.push(await findTravelRequestById(row.id));
+    const request = await findTravelRequestById(row.id);
+    // Check if this user has viewed the request
+    if (viewerId) {
+      const viewedResult = await query(
+        `SELECT viewed_at FROM travel_request_views WHERE travel_request_id = $1 AND user_id = $2`,
+        [row.id, viewerId]
+      );
+      request.viewedByUser = viewedResult.rows.length > 0;
+    } else {
+      request.viewedByUser = false;
+    }
+    requests.push(request);
   }
   console.log('listTravelRequests - Returning', requests.length, 'requests');
   return requests;
 };
 
-const updateTravelRequestStatus = async ({ id, status, approvedBy, rejectionReason }) => {
-  await query(
-    `
-      UPDATE travel_requests
-      SET
-        status = COALESCE($2, status),
-        approved_by = COALESCE($3, approved_by),
-        approved_at = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE approved_at END,
-        rejection_reason = COALESCE($4, rejection_reason),
-        updated_at = NOW()
-      WHERE id = $1
-    `,
-    [id, status, approvedBy || null, rejectionReason || null]
-  );
+const updateTravelRequestStatus = async ({ id, status, approvedBy, rejectionReason, supervisorComment, ceoComment }) => {
+  try {
+    const result = await query(
+      `
+        UPDATE travel_requests
+        SET
+          status = COALESCE($2, status),
+          approved_by = $3::BIGINT,
+          approved_at = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE approved_at END,
+          rejection_reason = COALESCE($4, rejection_reason),
+          supervisor_comment = COALESCE($5, supervisor_comment),
+          ceo_comment = COALESCE($6, ceo_comment),
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [id, status, approvedBy || null, rejectionReason, supervisorComment, ceoComment]
+    );
 
-  return findTravelRequestById(id);
+    return findTravelRequestById(id);
+  } catch (error) {
+    console.error('Travel request status update error:', error.message);
+    
+    // Fallback: try without comment columns if they don't exist
+    if (error.message && error.message.includes('column') && (error.message.includes('supervisor_comment') || error.message.includes('ceo_comment'))) {
+      console.warn('Comment columns not found, trying fallback without comments');
+      try {
+        const result = await query(
+          `
+            UPDATE travel_requests
+            SET
+              status = COALESCE($2, status),
+              approved_by = $3::BIGINT,
+              approved_at = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE approved_at END,
+              rejection_reason = $4,
+              updated_at = NOW()
+            WHERE id = $1
+          `,
+          [id, status, approvedBy || null, rejectionReason || null]
+        );
+        return findTravelRequestById(id);
+      } catch (fallbackError) {
+        console.error('Fallback without comments also failed:', fallbackError.message);
+        throw fallbackError;
+      }
+    }
+    
+    // If constraint error due to pending_ceo not being in the check constraint, try to update the constraint
+    if (error.message && error.message.includes('check constraint')) {
+      console.warn('Constraint error detected, attempting to update constraint');
+      try {
+        await query(
+          `
+            ALTER TABLE travel_requests
+            DROP CONSTRAINT IF EXISTS travel_requests_status_check
+          `
+        );
+        
+        await query(
+          `
+            ALTER TABLE travel_requests
+            ADD CONSTRAINT travel_requests_status_check
+            CHECK (status IN ('pending', 'pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed'))
+          `
+        );
+        
+        console.log('Constraint updated successfully, retrying status update');
+        
+        // Retry the status update
+        const result = await query(
+          `
+            UPDATE travel_requests
+            SET
+              status = COALESCE($2, status),
+              approved_by = $3::BIGINT,
+              approved_at = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE approved_at END,
+              rejection_reason = $4,
+              updated_at = NOW()
+            WHERE id = $1
+          `,
+          [id, status, approvedBy || null, rejectionReason || null]
+        );
+
+        return findTravelRequestById(id);
+      } catch (constraintError) {
+        console.error('Failed to update constraint:', constraintError.message);
+        throw error; // Throw original error if constraint update fails
+      }
+    } else {
+      throw error;
+    }
+  }
 };
 
 const updateTravelRequestDetails = async ({ id, startDate, endDate, origin, destination, reason, estimatedCost, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent, supportingDocumentId }) => {
@@ -950,8 +1242,17 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
   const notificationSettings = await getTravelNotificationSettings();
   const isNotificationRecipient = notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.includes(userId);
 
-  if (userRole === 'admin' || userRole === 'ceo' || userRole === 'finance' || isNotificationRecipient) {
-    // Admin, CEO, finance, and notification recipients can see all pending requests
+  if (userRole === 'ceo') {
+    // CEO only counts pending_ceo requests (those awaiting CEO approval)
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests
+        WHERE status = 'pending_ceo'
+      `
+    );
+  } else if (userRole === 'admin' || userRole === 'finance' || isNotificationRecipient) {
+    // Admin, finance, and notification recipients can see all pending requests
     result = await query(
       `
         SELECT COUNT(*) as count
@@ -960,20 +1261,20 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
       `
     );
   } else if (userRole === 'supervisor') {
-    // Supervisors can see pending requests from their team members
+    // Supervisors can see pending requests from employees they are designated approvers for
     try {
       result = await query(
         `
           SELECT COUNT(*) as count
           FROM travel_requests tr
-          INNER JOIN users u ON u.id = tr.user_id
-          WHERE tr.status = 'pending' AND u.employee_supervisor_id = $1
+          INNER JOIN travel_employee_routing ter ON ter.employee_id = tr.user_id
+          WHERE tr.status = 'pending' AND ter.approver_id = $1
         `,
         [userId]
       );
     } catch (error) {
-      console.warn('employee_supervisor_id column does not exist, using fallback query');
-      // Fallback: return 0 if column doesn't exist
+      console.warn('Failed to get supervisor pending count:', error.message);
+      // Fallback: return 0 if query fails
       result = { rows: [{ count: 0 }] };
     }
   } else {
@@ -1010,43 +1311,98 @@ const getPendingTravelRequestCountForUserExcludingViewed = async (userId, userRo
   // Check if user has access to view all travel requests
   const notificationSettings = await getTravelNotificationSettings();
   const canViewAll = notificationSettings && notificationSettings.viewAllTravelRequestsIds && notificationSettings.viewAllTravelRequestsIds.includes(userId);
+  const isNotificationRecipient = notificationSettings && notificationSettings.recipientIds && notificationSettings.recipientIds.includes(userId);
 
   const oversightRoles = ['admin', 'ceo', 'finance', 'it_officer', 'administrator_and_membership_officer'];
 
-  if (oversightRoles.includes(userRole) || userPositionTitle === 'Administration' || canViewAll) {
-    // Admin, CEO, finance, membership officer, administrator, and users with view-all access can see all pending requests
-    // Exclude those they've already viewed
+  if (userRole === 'ceo') {
+    // CEO only counts pending_ceo requests (those awaiting CEO approval)
+    // CEO does NOT count pending requests (those are still with supervisors)
+    // CEO count is NOT affected by viewed status - shading remains until approved/rejected
     result = await query(
       `
         SELECT COUNT(*) as count
         FROM travel_requests tr
-        WHERE tr.status = 'pending'
+        WHERE tr.status = 'pending_ceo'
+      `,
+      []
+    );
+  } else if (userRole === 'employee') {
+    // Employees count their own unviewed requests (any status)
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests tr
+        WHERE tr.user_id = $1
+        AND tr.status IN ('pending', 'pending_ceo', 'approved', 'in_progress', 'completed')
         AND tr.id NOT IN (
           SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
         )
       `,
       [userId]
     );
-  } else if (userRole === 'supervisor') {
-    // Supervisors can see pending requests from their team members
-    try {
+  } else if (oversightRoles.includes(userRole) || userPositionTitle === 'Administration' || canViewAll) {
+    // Finance should not see pending count - they only handle settled status for CEO-approved requests
+    if (userRole === 'finance') {
+      result = { rows: [{ count: 0 }] };
+    } else if (isNotificationRecipient) {
+      // Travel notification recipients count unviewed approved requests
       result = await query(
         `
           SELECT COUNT(*) as count
           FROM travel_requests tr
-          INNER JOIN users u ON u.id = tr.user_id
-          WHERE tr.status = 'pending' AND u.employee_supervisor_id = $1
+          WHERE tr.status = 'approved'
           AND tr.id NOT IN (
             SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
           )
         `,
         [userId]
       );
+    } else {
+      // Admin, membership officer, administrator, and users with view-all access can see all pending requests
+      result = await query(
+        `
+          SELECT COUNT(*) as count
+          FROM travel_requests tr
+          WHERE tr.status = 'pending'
+          AND tr.id NOT IN (
+            SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
+          )
+        `,
+        [userId]
+      );
+    }
+  } else if (userRole === 'supervisor') {
+    // Supervisors can see pending requests from employees they are designated approvers for
+    // Supervisor count is NOT affected by viewed status - shading remains until approved/rejected
+    try {
+      result = await query(
+        `
+          SELECT COUNT(*) as count
+          FROM travel_requests tr
+          INNER JOIN travel_employee_routing ter ON ter.employee_id = tr.user_id
+          WHERE tr.status = 'pending' AND ter.approver_id = $1
+        `,
+        [userId]
+      );
     } catch (error) {
-      console.warn('employee_supervisor_id column does not exist, using fallback query');
-      // Fallback: return 0 if column doesn't exist
+      console.warn('Failed to get supervisor pending count:', error.message);
+      // Fallback: return 0 if query fails
       result = { rows: [{ count: 0 }] };
     }
+  } else if (isNotificationRecipient) {
+    // Travel notification recipients count unviewed approved requests
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests tr
+        WHERE tr.status = 'approved'
+        AND tr.id NOT IN (
+          SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
+        )
+      `,
+      [userId]
+    );
   } else {
     // Regular employees can only see requests where they are one of the designated approvers
     result = await query(
