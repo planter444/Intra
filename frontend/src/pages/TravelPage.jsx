@@ -54,14 +54,19 @@ const getCorrectDSACurrency = (dbCurrency, travelCategory, settings) => {
 };
 
 const canDecideTravel = (user, request, employeeApprovers) => {
+  // CEO can always approve pending_ceo requests regardless of routing
+  if (user.role === 'ceo' && request.status === 'pending_ceo') {
+    return true;
+  }
+
   // ONLY check employee-specific routing - this is the only approval strategy
   const designatedApproverId = employeeApprovers[request.userId];
-  
+
   // User must be the designated approver for this employee
   if (!designatedApproverId || String(designatedApproverId) !== String(user.id)) {
     return false;
   }
-  
+
   // Can only approve pending, pending_ceo, or rejected requests
   return ['pending', 'pending_ceo', 'rejected'].includes(request.status);
 };
@@ -272,10 +277,7 @@ export default function TravelPage() {
     }
     return true;
   }).filter((request) => {
-    // Hide pending_ceo from regular employees (they only need to see their own pending requests)
-    if (user.role === 'employee' && request.status === 'pending_ceo') {
-      return false;
-    }
+    // Employees can see all their requests regardless of status
     return true;
   }).filter((request) => {
     // Search filter
@@ -816,19 +818,6 @@ export default function TravelPage() {
                           }}
                         >
                           Cancel
-                        </button>
-                      )}
-                      {canDecideTravel(user, request, employeeApprovers) && (
-                        <button
-                          type="button"
-                          className="flex-1 sm:flex-none rounded-lg bg-brand-gradient px-2 py-1.5 text-xs font-medium text-white hover:opacity-90 sm:px-3 sm:text-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/travel/${request.id}`);
-                          }}
-                        >
-                          <Eye size={14} className="inline mr-1" />
-                          View
                         </button>
                       )}
                       {canDeleteTravel(user, request) && (

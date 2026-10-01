@@ -229,7 +229,7 @@ export default function DocumentsPage() {
 
   const visibleDocuments = useMemo(
     () => documents
-      .filter((doc) => doc.folderType !== 'profile' && doc.folderType !== 'branding')
+      .filter((doc) => doc && doc.folderType !== 'profile' && doc.folderType !== 'branding' && doc.folderType !== 'travel')
       .map((document) => ({
         ...document,
         isNew: user.role === 'ceo'
@@ -245,13 +245,14 @@ export default function DocumentsPage() {
     }
 
     const grouped = visibleDocuments.reduce((accumulator, document) => {
-      const key = String(document.userId);
+      // Use uploadedBy as fallback if userId is missing
+      const key = String(document.userId || document.uploadedBy || document.id);
       if (!accumulator[key]) {
         accumulator[key] = {
           id: key,
-          userId: document.userId,
-          employeeName: document.employeeName || 'Employee',
-          employeeNo: document.employeeNo || 'No employee number',
+          userId: document.userId || document.uploadedBy,
+          employeeName: document.employeeName || document.uploadedByName || 'Unknown',
+          employeeNo: document.employeeNo || 'N/A',
           totalSize: 0,
           documentCount: 0,
           newCount: 0,
@@ -290,13 +291,14 @@ export default function DocumentsPage() {
   );
 
   const selectedFolderDocuments = useMemo(
-    () => visibleDocuments.filter((document) => String(document.userId) === String(selectedEmployeeId)),
+    () => visibleDocuments.filter((document) => document.userId && String(document.userId) === String(selectedEmployeeId)),
     [selectedEmployeeId, visibleDocuments]
   );
   const documentsByCategory = useMemo(() => {
     const map = new Map();
     documentCategories.forEach((cat) => map.set(cat.code, []));
     selectedFolderDocuments.forEach((doc) => {
+      if (!doc) return;
       const found = documentCategories.find((cat) => (cat.types || []).some((t) => t.code === doc.folderType));
       const key = found ? found.code : 'uncategorized';
       if (!map.has(key)) map.set(key, []);
@@ -311,6 +313,7 @@ export default function DocumentsPage() {
     const map = new Map();
     documentCategories.forEach((cat) => map.set(cat.code, []));
     visibleDocuments.forEach((doc) => {
+      if (!doc) return;
       const found = documentCategories.find((cat) => (cat.types || []).some((t) => t.code === doc.folderType));
       const key = found ? found.code : 'uncategorized';
       if (!map.has(key)) map.set(key, []);
@@ -334,7 +337,7 @@ export default function DocumentsPage() {
       return;
     }
 
-    const hasVisibleDocuments = visibleDocuments.some((document) => String(document.userId) === String(selectedEmployeeId));
+    const hasVisibleDocuments = visibleDocuments.some((document) => document.userId && String(document.userId) === String(selectedEmployeeId));
     if (!hasVisibleDocuments) {
       setSelectedEmployeeId('');
     }
@@ -419,10 +422,14 @@ export default function DocumentsPage() {
   };
 
   const handlePreviewRow = (row) => {
+    if (!row || !row.id) {
+      console.error('Row or row.id is undefined:', row);
+      return;
+    }
     handlePreview({
       id: row.id,
-      fileName: row.file_name,
-      mimeType: row.mime_type
+      fileName: row.file_name || row.fileName,
+      mimeType: row.mime_type || row.mimeType
     });
   };
 
@@ -436,6 +443,10 @@ export default function DocumentsPage() {
   };
 
   const handleOpenDocument = (documentId) => {
+    if (!documentId) {
+      console.error('Document ID is undefined');
+      return;
+    }
     if (user.role === 'ceo') {
       setSeenDocumentIds((current) => [...new Set([...current.map(String), String(documentId)])]);
     }
@@ -553,11 +564,20 @@ export default function DocumentsPage() {
                 {
                   key: 'actions',
                   header: 'Actions',
-                  render: (row) => (
-                    <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={() => setSelectedEmployeeId(String(row.userId))}>
-                      <Eye size={14} />View
-                    </button>
-                  )
+                  render: (row) => {
+                    if (!row || !row.userId) return null;
+                    return (
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('View button clicked, userId:', row.userId);
+                          setSelectedEmployeeId(String(row.userId));
+                        }}>
+                          <Eye size={14} />View
+                        </button>
+                      </div>
+                    );
+                  }
                 }
               ]}
               rows={folderRows}
@@ -575,15 +595,18 @@ export default function DocumentsPage() {
                   {
                     key: 'fileName',
                     header: 'Document type',
-                    render: (row) => (
-                      <div className={row.isNew ? `rounded-2xl px-3 py-2 ${isAddendumDocument(row) ? 'bg-rose-50' : 'bg-amber-50'}` : isAddendumDocument(row) ? 'rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2' : ''}>
-                        <p className={`font-medium ${isAddendumDocument(row) ? 'text-rose-700' : 'text-slate-900'}`}>{getDocumentDisplayLabel(row, folderLabelMap)}</p>
-                        <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{row.fileName}</p>
-                      </div>
-                    )
+                    render: (row) => {
+                      if (!row) return null;
+                      return (
+                        <div className={row.isNew ? `rounded-2xl px-3 py-2 ${isAddendumDocument(row) ? 'bg-rose-50' : 'bg-amber-50'}` : isAddendumDocument(row) ? 'rounded-2xl border border-rose-100 bg-rose-50/70 px-3 py-2' : ''}>
+                          <p className={`font-medium ${isAddendumDocument(row) ? 'text-rose-700' : 'text-slate-900'}`}>{getDocumentDisplayLabel(row, folderLabelMap)}</p>
+                          <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{row.fileName}</p>
+                        </div>
+                      );
+                    }
                   },
                   { key: 'mimeType', header: 'Type', render: (row) => getDocumentTypeLabel(row) },
-                  { key: 'fileSize', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
+                  { key: 'fileSize', header: 'Size', render: (row) => formatDocumentSizeMb(row?.fileSize || 0) },
                   { key: 'isNew', header: 'Status', render: (row) => row.isNew ? <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">New</span> : <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Seen</span> },
                   {
                     key: 'actions',
@@ -602,7 +625,7 @@ export default function DocumentsPage() {
                         }}>
                           Download
                         </button>
-                        {(canManageEmployeeDocuments || (String(row.userId) === String(user.id) && (!isRestrictedDocument(row) || canManageRestrictedDocuments))) ? (
+                        {(canManageEmployeeDocuments || (row.userId && String(row.userId) === String(user.id) && (!isRestrictedDocument(row) || canManageRestrictedDocuments))) ? (
                           <button type="button" className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700" onClick={(event) => {
                             event.stopPropagation();
                             handleDelete(row);
@@ -616,7 +639,7 @@ export default function DocumentsPage() {
                 ]}
                 rows={canManageEmployeeDocuments ? selectedFolderDocuments : visibleDocuments}
                 getRowProps={(row) => ({
-                  onClick: () => handleOpenDocument(row.id),
+                  onClick: () => row && row.id ? handleOpenDocument(row.id) : null,
                   className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}`
                 })}
                 emptyLabel={canManageEmployeeDocuments ? 'No documents were found in this folder.' : 'No documents found.'}
@@ -634,9 +657,9 @@ export default function DocumentsPage() {
                         </div>
                         <DataTable
                           columns={[
-                            { key: 'type', header: 'Type', render: (row) => <span className={isAddendumDocument(row) ? 'font-medium text-rose-700' : ''}>{getDocumentDisplayLabel(row, folderLabelMap)}</span> },
-                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
-                            { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() },
+                            { key: 'type', header: 'Type', render: (row) => row ? <span className={isAddendumDocument(row) ? 'font-medium text-rose-700' : ''}>{getDocumentDisplayLabel(row, folderLabelMap)}</span> : null },
+                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row?.fileSize || 0) },
+                            { key: 'createdAt', header: 'Uploaded', render: (row) => row?.createdAt ? new Date(row.createdAt).toLocaleDateString() : 'N/A' },
                             { key: 'actions', header: 'Actions', render: (row) => (
                               <div className="flex flex-wrap gap-2">
                                 <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(e) => { e.stopPropagation(); handlePreviewRow(row); }}>Preview</button>
@@ -645,7 +668,7 @@ export default function DocumentsPage() {
                             ) }
                           ]}
                           rows={docs}
-                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
+                          getRowProps={(row) => ({ onClick: () => row && row.id ? handleOpenDocument(row.id) : null, className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
                           emptyLabel="No documents in this category."
                         />
                       </div>
@@ -666,11 +689,17 @@ export default function DocumentsPage() {
                         <DataTable
                           columns={[
                             { key: 'type', header: 'Type', render: (row) => <span className={isAddendumDocument(row) ? 'font-medium text-rose-700' : ''}>{getDocumentDisplayLabel(row, folderLabelMap)}</span> },
-                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row.fileSize) },
-                            { key: 'createdAt', header: 'Uploaded', render: (row) => new Date(row.createdAt).toLocaleDateString() }
+                            { key: 'size', header: 'Size', render: (row) => formatDocumentSizeMb(row?.fileSize || 0) },
+                            { key: 'createdAt', header: 'Uploaded', render: (row) => row?.createdAt ? new Date(row.createdAt).toLocaleDateString() : 'N/A' },
+                            { key: 'actions', header: 'Actions', render: (row) => (
+                              <div className="flex flex-wrap gap-2">
+                                <button type="button" className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700" onClick={(e) => { e.stopPropagation(); handlePreviewRow(row); }}>Preview</button>
+                                <button type="button" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700" onClick={(e) => { e.stopPropagation(); handleDownload(row.id); }}>Download</button>
+                              </div>
+                            ) }
                           ]}
                           rows={docs}
-                          getRowProps={(row) => ({ onClick: () => handleOpenDocument(row.id), className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
+                          getRowProps={(row) => ({ onClick: () => row && row.id ? handleOpenDocument(row.id) : null, className: `cursor-pointer transition ${isAddendumDocument(row) ? 'hover:bg-rose-50/70' : 'hover:bg-slate-50'}` })}
                           emptyLabel="No documents in this category."
                         />
                       </div>
