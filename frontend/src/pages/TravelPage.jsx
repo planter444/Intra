@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Calendar, MapPin, DollarSign, FileText, CheckCircle, XCircle, Clock, AlertCircle, Users, Eye, Search, ArrowUpDown, User, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -25,9 +25,9 @@ const statusConfig = {
 const getStatusConfig = (request, user) => {
   const baseConfig = statusConfig[request.status] || statusConfig.pending;
   
-  // For finance, admin, and administrator_and_membership_officer: unsettled requests get amber background
-  const canSettleRoles = ['admin', 'finance', 'administrator_and_membership_officer'];
-  if (canSettleRoles.includes(user.role) && !request.settled) {
+  // For finance, admin, administrator, administrator_and_membership_officer: unsettled requests get amber background
+  const canSettleRoles = ['admin', 'finance', 'administrator', 'administrator_and_membership_officer'];
+  if ((canSettleRoles.includes(user.role) || user.positionTitle === 'Administration') && !request.settled) {
     return {
       ...baseConfig,
       bgColor: 'bg-amber-50',
@@ -369,6 +369,23 @@ export default function TravelPage() {
   const ownRequests = filteredRequests.filter(r => String(r.userId) === String(user.id));
   const otherRequests = filteredRequests.filter(r => String(r.userId) !== String(user.id));
 
+  // Sort other requests: unsettled approved requests first, then by date
+  const sortedOtherRequests = useMemo(() => {
+    return [...otherRequests].sort((a, b) => {
+      // Prioritize unsettled approved requests for admin/finance/administrator/administrator_and_membership_officer
+      if (['admin', 'finance', 'administrator', 'administrator_and_membership_officer'].includes(user.role) || user.positionTitle === 'Administration') {
+        const aUnsettled = a.status === 'approved' && !a.settled;
+        const bUnsettled = b.status === 'approved' && !b.settled;
+        
+        if (aUnsettled && !bUnsettled) return -1;
+        if (!aUnsettled && bUnsettled) return 1;
+      }
+      
+      // Then sort by date (newest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [otherRequests, user.role, user.positionTitle]);
+
   // Show only 2 own requests initially, rest on "Show More"
   const displayedOwnRequests = showMoreOwnRequests ? ownRequests : ownRequests.slice(0, 2);
 
@@ -475,8 +492,8 @@ export default function TravelPage() {
           />
         ) : (
           <>
-            {/* My Travel Requests Section - for finance, admin, administrator_and_membership_officer, CEO, and chairman */}
-            {(['admin', 'finance', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role)) && (
+            {/* My Travel Requests Section - for finance, admin, administrator, administrator_and_membership_officer, CEO, and chairman */}
+            {(['admin', 'finance', 'administrator', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role) || user.positionTitle === 'Administration') && (
               <>
                 <div className="border-b-2 border-slate-300 pb-4 mb-6">
                   <h3 className="text-xl font-bold text-slate-900">My Travel Requests</h3>
@@ -695,21 +712,21 @@ export default function TravelPage() {
             )}
 
             {/* Other Travel Requests Section */}
-            {(['admin', 'finance', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role)) && (
+            {(['admin', 'finance', 'administrator', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role) || user.positionTitle === 'Administration') && (
               <div className="border-b-2 border-slate-300 pb-4 mb-6">
                 <h3 className="text-xl font-bold text-slate-900">Other Travel Requests</h3>
                 <p className="text-sm text-slate-500">Travel requests from other staff members</p>
               </div>
             )}
 
-            {otherRequests.length === 0 ? (
+            {sortedOtherRequests.length === 0 ? (
               <EmptyState
                 title="No travel requests found"
                 description={user.role === 'employee' ? 'You have not submitted any travel requests yet.' : 'No travel requests have been submitted yet.'}
               />
             ) : (
               <div className="space-y-4">
-                {otherRequests.map((request) => {
+                {sortedOtherRequests.map((request) => {
                   const config = getStatusConfig(request, user);
                   const StatusIcon = config.icon;
                   // Highlight pending requests for supervisors (not for staff's own requests) - keep highlighting until approved/rejected (not when opened)

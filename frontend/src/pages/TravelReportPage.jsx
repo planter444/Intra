@@ -426,6 +426,199 @@ export default function TravelReportPage() {
             </div>
           </SectionCard>
 
+          {reportData.travelSummary && (
+            <SectionCard title="Travel Summary Statistics" subtitle="Financial breakdown by travel category.">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px] text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-slate-300 bg-slate-50">
+                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Category</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">DSA</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Accommodation</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Other Costs</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Reimbursement</th>
+                      <th className="px-4 py-3 text-right font-semibold text-slate-700">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {['Within Kenya', 'East Africa', 'International', 'Local Movement'].map((category, index) => {
+                      const catData = reportData.travelSummary.byCategory[category] || { dsa: {}, accommodation: {}, other: {}, reimbursement: {} };
+                      
+                      const formatCurrency = (amounts, field) => {
+                        if (!amounts || Object.keys(amounts).length === 0) return '-';
+                        
+                        // For East Africa and International, only DSA is in USD
+                        if ((category === 'East Africa' || category === 'International') && field === 'dsa') {
+                          const totalAmount = Object.values(amounts).reduce((sum, amt) => sum + amt, 0);
+                          if (totalAmount > 0) {
+                            return `${Math.round(totalAmount).toLocaleString()} USD`;
+                          }
+                          return '-';
+                        }
+                        
+                        return Object.entries(amounts).map(([currency, amount]) => 
+                          `${currency} ${Math.round(amount).toLocaleString()}`
+                        ).join(' + ');
+                      };
+
+                      const calculateTotalByCurrency = (dsa, accommodation, other, reimbursement) => {
+                        const totalsByCurrency = {};
+                        Object.entries(dsa || {}).forEach(([currency, amount]) => {
+                          totalsByCurrency[currency] = (totalsByCurrency[currency] || 0) + amount;
+                        });
+                        Object.entries(accommodation || {}).forEach(([currency, amount]) => {
+                          totalsByCurrency[currency] = (totalsByCurrency[currency] || 0) + amount;
+                        });
+                        Object.entries(other || {}).forEach(([currency, amount]) => {
+                          totalsByCurrency[currency] = (totalsByCurrency[currency] || 0) + amount;
+                        });
+                        Object.entries(reimbursement || {}).forEach(([currency, amount]) => {
+                          totalsByCurrency[currency] = (totalsByCurrency[currency] || 0) + amount;
+                        });
+                        return totalsByCurrency;
+                      };
+
+                      const formatTotalByCurrency = (totalsByCurrency, category) => {
+                        if (!totalsByCurrency || Object.keys(totalsByCurrency).length === 0) return '-';
+                        
+                        // For East Africa and International, show KES first then USD separately
+                        if (category === 'East Africa' || category === 'International') {
+                          const kesAmount = totalsByCurrency['KES'] || 0;
+                          const usdAmount = totalsByCurrency['USD'] || 0;
+                          
+                          let result = '';
+                          if (kesAmount > 0) {
+                            result += `KES ${Math.round(kesAmount).toLocaleString()}`;
+                          }
+                          if (usdAmount > 0) {
+                            if (result) result += ' + ';
+                            result += `${Math.round(usdAmount).toLocaleString()} USD`;
+                          }
+                          return result || '-';
+                        }
+                        
+                        return Object.entries(totalsByCurrency).map(([currency, amount]) => 
+                          `${currency} ${Math.round(amount).toLocaleString()}`
+                        ).join(' + ');
+                      };
+
+                      const totalByCurrency = calculateTotalByCurrency(catData.dsa, catData.accommodation, catData.other, catData.reimbursement);
+
+                      return (
+                        <tr key={category} className={`border-b border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{category}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(catData.dsa, 'dsa')}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{category === 'Within Kenya' || category === 'Local Movement' ? '-' : formatCurrency(catData.accommodation, 'accommodation')}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(catData.other, 'other')}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(catData.reimbursement, 'reimbursement')}</td>
+                          <td className="px-4 py-3 text-right font-bold text-slate-900">{formatTotalByCurrency(totalByCurrency, category)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-300 bg-emerald-50">
+                      <td className="px-4 py-3 font-bold text-slate-900">
+                        <div>Total Money Spent</div>
+                        <div>on Travels</div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {(() => {
+                          const eastAfricaDSA = reportData.travelSummary.byCategory?.['East Africa']?.dsa || {};
+                          const internationalDSA = reportData.travelSummary.byCategory?.['International']?.dsa || {};
+                          const withinKenyaDSA = reportData.travelSummary.byCategory?.['Within Kenya']?.dsa || {};
+                          const localMovementDSA = reportData.travelSummary.byCategory?.['Local Movement']?.dsa || {};
+                          
+                          const forcedUSDTotal = Object.values(eastAfricaDSA).reduce((sum, amt) => sum + amt, 0) + 
+                                                Object.values(internationalDSA).reduce((sum, amt) => sum + amt, 0);
+                          const kesDSATotal = Object.values(withinKenyaDSA).reduce((sum, amt) => sum + amt, 0) + 
+                                             Object.values(localMovementDSA).reduce((sum, amt) => sum + amt, 0);
+                          
+                          let result = '';
+                          if (kesDSATotal > 0) {
+                            result += `KES ${Math.round(kesDSATotal).toLocaleString()}`;
+                          }
+                          if (forcedUSDTotal > 0) {
+                            if (result) result += ' + ';
+                            result += `${Math.round(forcedUSDTotal).toLocaleString()} USD`;
+                          }
+                          return result || '-';
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {(() => {
+                          const totals = reportData.travelSummary.totals?.accommodation || {};
+                          if (!totals || Object.keys(totals).length === 0) return '-';
+                          return Object.entries(totals).map(([currency, amount]) => 
+                            `${currency} ${Math.round(amount).toLocaleString()}`
+                          ).join(' + ');
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {(() => {
+                          const totals = reportData.travelSummary.totals?.other || {};
+                          if (!totals || Object.keys(totals).length === 0) return '-';
+                          return Object.entries(totals).map(([currency, amount]) => 
+                            `${currency} ${Math.round(amount).toLocaleString()}`
+                          ).join(' + ');
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                        {(() => {
+                          const totals = reportData.travelSummary.totals?.reimbursement || {};
+                          if (!totals || Object.keys(totals).length === 0) return '-';
+                          return Object.entries(totals).map(([currency, amount]) => 
+                            `${currency} ${Math.round(amount).toLocaleString()}`
+                          ).join(' + ');
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-emerald-700 text-lg">
+                        {(() => {
+                          // Calculate grand total from row components (not column totals)
+                          let grandKesTotal = 0;
+                          let grandUsdTotal = 0;
+                          
+                          ['Within Kenya', 'East Africa', 'International', 'Local Movement'].forEach(category => {
+                            const catData = reportData.travelSummary.byCategory?.[category] || { dsa: {}, accommodation: {}, other: {}, reimbursement: {} };
+                            
+                            // For East Africa and International, DSA is forced to USD
+                            if (category === 'East Africa' || category === 'International') {
+                              grandUsdTotal += Object.values(catData.dsa || {}).reduce((sum, amt) => sum + amt, 0);
+                              grandKesTotal += (catData.accommodation['KES'] || 0) + (catData.other['KES'] || 0) + (catData.reimbursement['KES'] || 0);
+                              grandUsdTotal += (catData.accommodation['USD'] || 0) + (catData.other['USD'] || 0) + (catData.reimbursement['USD'] || 0);
+                            } else {
+                              grandKesTotal += Object.values(catData.dsa || {}).reduce((sum, amt) => sum + amt, 0);
+                              grandKesTotal += (catData.accommodation['KES'] || 0) + (catData.other['KES'] || 0) + (catData.reimbursement['KES'] || 0);
+                              grandUsdTotal += (catData.accommodation['USD'] || 0) + (catData.other['USD'] || 0) + (catData.reimbursement['USD'] || 0);
+                            }
+                          });
+                          
+                          // Format with KES on one line, USD on next
+                          const kesLine = grandKesTotal > 0 ? `KES ${Math.round(grandKesTotal).toLocaleString()}` : '';
+                          const usdLine = grandUsdTotal > 0 ? `${Math.round(grandUsdTotal).toLocaleString()} USD` : '';
+                          
+                          if (kesLine && usdLine) {
+                            return (
+                              <div>
+                                <div>{kesLine}</div>
+                                <div>{usdLine}</div>
+                              </div>
+                            );
+                          } else if (kesLine) {
+                            return kesLine;
+                          } else if (usdLine) {
+                            return usdLine;
+                          }
+                          return 'KES 0';
+                        })()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </SectionCard>
+          )}
+
           {reportData.employeesOnTravel.length > 0 && (
             <SectionCard title="Employees Currently on Travel" subtitle="Employees who are currently on travel.">
               <div className="overflow-x-auto">

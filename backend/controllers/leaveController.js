@@ -466,10 +466,14 @@ const getLeaveOverview = async (req, res, next) => {
 
       return {
         id: user.id,
-        fullName: `${user.first_name} ${user.last_name}`,
-        department: user.department_name,
+        fullName: user.fullName,
+        departmentName: user.departmentName,
+        positionTitle: user.positionTitle,
+        roleTitle: user.roleTitle,
+        employeeNo: user.employeeNo,
+        joinedAt: user.joinedAt,
         totalDaysTaken,
-        currentStatus,
+        currentStatus: currentLeaveStatus,
         currentLeave: currentLeave ? {
           id: currentLeave.id,
           leaveTypeLabel: currentLeave.leaveTypeLabel,
@@ -521,7 +525,7 @@ const createRequest = async (req, res, next) => {
       leaveTypeCode,
       startDate,
       endDate,
-      hasSupportingDocument: Boolean(req.file || request.supportingDocumentPath)
+      hasSupportingDocument: Boolean(req.file)
     });
 
     if (validation.status) {
