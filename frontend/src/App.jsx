@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import EmployeesPage from './pages/EmployeesPage';
 import LeavesPage from './pages/LeavesPage';
+import CeoMyLeavePage from './pages/CeoMyLeavePage';
 import LeaveApplyPage from './pages/LeaveApplyPage';
 import LeaveRequestDetailPage from './pages/LeaveRequestDetailPage';
 import DocumentsPage from './pages/DocumentsPage';
@@ -78,37 +79,38 @@ export default function App() {
       <Route path="/" element={<LandingRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DashboardPage /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><ProfilePage /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><DashboardPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><ProfilePage /></ProtectedRoute>} />
       <Route path="/employees" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><EmployeesPage /></ProtectedRoute>} />
-      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeavesPage /></ProtectedRoute>} />
-      <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveStatusBoardPage /></ProtectedRoute>} />
-      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'finance']}><LeaveApplyPage /></ProtectedRoute>} />
-      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveRequestDetailPage /></ProtectedRoute>} />
-      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><DocumentsPage /></ProtectedRoute>} />
-      <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><KPIMatrixPage /></ProtectedRoute>} />
-      <Route path="/kpi-matrix/:employeeId" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><KPIMatrixEmployeePage /></ProtectedRoute>} />
-      <Route path="/kpi-self" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><EmployeeSelfAppraisalPage /></ProtectedRoute>} />
+      <Route path="/leaves" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><LeavesPage /></ProtectedRoute>} />
+      <Route path="/leaves/my-leave" element={<ProtectedRoute allowedRoles={['ceo']}><CeoMyLeavePage /></ProtectedRoute>} />
+      <Route path="/leave-status" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><LeaveStatusBoardPage /></ProtectedRoute>} />
+      <Route path="/leaves/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LeaveApplyPage /></ProtectedRoute>} />
+      <Route path="/leaves/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><LeaveRequestDetailPage /></ProtectedRoute>} />
+      <Route path="/documents" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><DocumentsPage /></ProtectedRoute>} />
+      <Route path="/kpi-matrix" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><KPIMatrixPage /></ProtectedRoute>} />
+      <Route path="/kpi-matrix/:employeeId" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><KPIMatrixEmployeePage /></ProtectedRoute>} />
+      <Route path="/kpi-self" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><EmployeeSelfAppraisalPage /></ProtectedRoute>} />
       <Route path="/kpi-review/:employeeId" element={<ProtectedRoute allowedRoles={['supervisor', 'admin', 'ceo']}><SupervisorAppraisalReviewPage /></ProtectedRoute>} />
-      <Route path="/performance-dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><PerformanceDashboard /></ProtectedRoute>} />
-      <Route path="/performance-dashboard/:employeeId" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><PerformanceEmployeePage /></ProtectedRoute>} />
+      <Route path="/performance-dashboard" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><PerformanceDashboard /></ProtectedRoute>} />
+      <Route path="/performance-dashboard/:employeeId" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><PerformanceEmployeePage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute allowedRoles={['admin', 'ceo', 'finance']}><SettingsPage /></ProtectedRoute>} />
       <Route path="/audit-logs" element={<ProtectedRoute allowedRoles={['admin']}><AuditLogsPage /></ProtectedRoute>} />
       <Route path="/payslips" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><PayslipsPage /></ProtectedRoute>} />
       <Route path="/payslip-templates" element={<ProtectedRoute allowedRoles={['admin']}><PayslipTemplatesPage /></ProtectedRoute>} />
-      <Route path="/travel" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TravelPage /></ProtectedRoute>} />
-      <Route path="/travel/official" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><OfficialTravelPage /></ProtectedRoute>} />
-      <Route path="/travel/apply" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TravelApplyPage /></ProtectedRoute>} />
-      <Route path="/travel/reimbursement" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TravelReimbursementPage /></ProtectedRoute>} />
-      <Route path="/travel/local" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LocalMovementPage /></ProtectedRoute>} />
-      <Route path="/travel/local/booking" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LocalMovementBookingPage /></ProtectedRoute>} />
-      <Route path="/travel/local/reimbursement" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><LocalMovementReimbursementPage /></ProtectedRoute>} />
-      <Route path="/travel/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TravelDetailPage /></ProtectedRoute>} />
+      <Route path="/travel" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><TravelPage /></ProtectedRoute>} />
+      <Route path="/travel/official" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><OfficialTravelPage /></ProtectedRoute>} />
+      <Route path="/travel/apply" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><TravelApplyPage /></ProtectedRoute>} />
+      <Route path="/travel/reimbursement" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><TravelReimbursementPage /></ProtectedRoute>} />
+      <Route path="/travel/local" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><LocalMovementPage /></ProtectedRoute>} />
+      <Route path="/travel/local/booking" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><LocalMovementBookingPage /></ProtectedRoute>} />
+      <Route path="/travel/local/reimbursement" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><LocalMovementReimbursementPage /></ProtectedRoute>} />
+      <Route path="/travel/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair']}><TravelDetailPage /></ProtectedRoute>} />
       <Route path="/travel/settings" element={<ProtectedRoute allowedRoles={['admin']}><TravelSettingsPage /></ProtectedRoute>} />
       <Route path="/report" element={<ProtectedRoute allowedRoles={['admin', 'ceo']}><ReportPage /></ProtectedRoute>} />
       <Route path="/leave-report" element={<ProtectedRoute allowedRoles={['admin', 'ceo']}><LeaveReportPage /></ProtectedRoute>} />
       <Route path="/travel-report" element={<ProtectedRoute allowedRoles={['admin', 'ceo']}><TravelReportPage /></ProtectedRoute>} />
-      <Route path="/timesheets" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TimesheetsListPage /></ProtectedRoute>} />
+      <Route path="/timesheets" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance', 'chairman', 'chairperson']}><TimesheetsListPage /></ProtectedRoute>} />
       <Route path="/timesheets/new" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TimesheetPage /></ProtectedRoute>} />
       <Route path="/timesheets/:id" element={<ProtectedRoute allowedRoles={['employee', 'supervisor', 'admin', 'ceo', 'finance']}><TimesheetPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />

@@ -44,7 +44,10 @@ export const getEmptyKpiEntry = ({ coreRoleCount = KPI_COUNT, indicatorCount = K
 });
 
 export const getNormalizedKpiEntry = (entry = {}, options = {}) => {
-  const legacyIndicatorCount = Object.keys(entry || {}).reduce((highest, key) => {
+  // Ensure entry is always an object - never undefined/null
+  const safeEntry = entry && typeof entry === 'object' ? entry : {};
+  
+  const legacyIndicatorCount = Object.keys(safeEntry).reduce((highest, key) => {
     const match = /^k(\d+)$/.exec(String(key || ''));
     if (!match) {
       return highest;
@@ -87,24 +90,32 @@ export const getNormalizedKpiEntry = (entry = {}, options = {}) => {
     return { role: '', comment: '' };
   });
 
-  return {
+  const result = {
     coreRoles: normalizedCoreRoles,
     indicators: normalizedIndicators,
-    description: entry?.description || '',
-    assessmentFrequency: entry?.assessmentFrequency || 'monthly',
-    audit: entry?.audit || {}
+    description: safeEntry?.description || '',
+    assessmentFrequency: safeEntry?.assessmentFrequency || 'monthly',
+    audit: safeEntry?.audit || {}
   };
+  
+  // Final defensive check: ensure indicators is always an array
+  if (!Array.isArray(result.indicators)) {
+    result.indicators = [];
+  }
+  
+  return result;
 };
 
 export const serializeKpiEntry = (entry = {}) => {
   const normalized = getNormalizedKpiEntry(entry);
+  const safeIndicators = Array.isArray(normalized.indicators) ? normalized.indicators : [];
 
-  return normalized.indicators.reduce((accumulator, indicator, index) => {
+  return safeIndicators.reduce((accumulator, indicator, index) => {
     accumulator[`k${index + 1}`] = indicator.score;
     return accumulator;
   }, {
     coreRoles: normalized.coreRoles,
-    indicators: normalized.indicators
+    indicators: safeIndicators
   });
 };
 
@@ -142,7 +153,8 @@ export const getPerformanceBand = (score, bands = {}) => {
 
 export const getAverageKpiScore = (entry = {}) => {
   const normalized = getNormalizedKpiEntry(entry);
-  const scores = normalized.indicators
+  const indicators = Array.isArray(normalized.indicators) ? normalized.indicators : [];
+  const scores = indicators
     .map((indicator) => Number(indicator.score))
     .filter((score) => Number.isFinite(score));
 
@@ -221,18 +233,20 @@ export const getCurrentAppraisal = (settings, employeeId) => {
 
 export const migrateLegacyKpiToAppraisal = (legacyKpi = {}) => {
   const normalized = getNormalizedKpiEntry(legacyKpi);
+  const safeCoreRoles = Array.isArray(normalized.coreRoles) ? normalized.coreRoles : [];
+  const safeIndicators = Array.isArray(normalized.indicators) ? normalized.indicators : [];
   
   return {
     ...createEmptyAppraisal(),
     selfAppraisal: {
-      coreRoles: normalized.coreRoles.map(role => ({
+      coreRoles: safeCoreRoles.map(role => ({
         role: role.role || role,
         selfComment: '',
         supervisorComment: '',
         selfScore: null,
         supervisorScore: null
       })),
-      indicators: normalized.indicators.map(indicator => ({
+      indicators: safeIndicators.map(indicator => ({
         label: indicator.label,
         selfComment: '',
         supervisorComment: '',
@@ -253,50 +267,53 @@ export const migrateLegacyKpiToAppraisal = (legacyKpi = {}) => {
 
 export const normalizeAppraisalData = (appraisal = {}) => {
   const empty = createEmptyAppraisal();
+  const safeAppraisal = appraisal && typeof appraisal === 'object' ? appraisal : {};
   
   return {
-    status: appraisal.status || empty.status,
+    status: safeAppraisal.status || empty.status,
     period: {
-      startDate: appraisal.period?.startDate || empty.period.startDate,
-      endDate: appraisal.period?.endDate || empty.period.endDate,
-      frequency: appraisal.period?.frequency || empty.period.frequency
+      startDate: safeAppraisal.period?.startDate || empty.period.startDate,
+      endDate: safeAppraisal.period?.endDate || empty.period.endDate,
+      frequency: safeAppraisal.period?.frequency || empty.period.frequency
     },
     selfAppraisal: {
-      coreRoles: Array.isArray(appraisal.selfAppraisal?.coreRoles) 
-        ? appraisal.selfAppraisal.coreRoles 
+      coreRoles: Array.isArray(safeAppraisal.selfAppraisal?.coreRoles) 
+        ? safeAppraisal.selfAppraisal.coreRoles 
         : empty.selfAppraisal.coreRoles,
-      indicators: Array.isArray(appraisal.selfAppraisal?.indicators) 
-        ? appraisal.selfAppraisal.indicators 
+      indicators: Array.isArray(safeAppraisal.selfAppraisal?.indicators) 
+        ? safeAppraisal.selfAppraisal.indicators 
         : empty.selfAppraisal.indicators,
-      overallComment: appraisal.selfAppraisal?.overallComment || '',
-      submittedAt: appraisal.selfAppraisal?.submittedAt || null
+      overallComment: safeAppraisal.selfAppraisal?.overallComment || '',
+      submittedAt: safeAppraisal.selfAppraisal?.submittedAt || null
     },
     supervisorReview: {
-      coreRoles: Array.isArray(appraisal.supervisorReview?.coreRoles) 
-        ? appraisal.supervisorReview.coreRoles 
+      coreRoles: Array.isArray(safeAppraisal.supervisorReview?.coreRoles) 
+        ? safeAppraisal.supervisorReview.coreRoles 
         : empty.supervisorReview.coreRoles,
-      indicators: Array.isArray(appraisal.supervisorReview?.indicators) 
-        ? appraisal.supervisorReview.indicators 
+      indicators: Array.isArray(safeAppraisal.supervisorReview?.indicators) 
+        ? safeAppraisal.supervisorReview.indicators 
         : empty.supervisorReview.indicators,
-      overallComment: appraisal.supervisorReview?.overallComment || '',
-      submittedAt: appraisal.supervisorReview?.submittedAt || null,
-      reviewerId: appraisal.supervisorReview?.reviewerId || null
+      overallComment: safeAppraisal.supervisorReview?.overallComment || '',
+      submittedAt: safeAppraisal.supervisorReview?.submittedAt || null,
+      reviewerId: safeAppraisal.supervisorReview?.reviewerId || null
     },
     ceoReview: {
-      overallComment: appraisal.ceoReview?.overallComment || '',
-      submittedAt: appraisal.ceoReview?.submittedAt || null
+      overallComment: safeAppraisal.ceoReview?.overallComment || '',
+      submittedAt: safeAppraisal.ceoReview?.submittedAt || null
     },
     audit: {
-      createdAt: appraisal.audit?.createdAt || null,
-      lastModifiedAt: appraisal.audit?.lastModifiedAt || null,
-      lastModifiedBy: appraisal.audit?.lastModifiedBy || null
+      createdAt: safeAppraisal.audit?.createdAt || null,
+      lastModifiedAt: safeAppraisal.audit?.lastModifiedAt || null,
+      lastModifiedBy: safeAppraisal.audit?.lastModifiedBy || null
     }
   };
 };
 
 export const calculateAppraisalScore = (appraisal, reviewType = 'self') => {
-  const reviewData = reviewType === 'self' ? appraisal.selfAppraisal : appraisal.supervisorReview;
-  const indicators = reviewData.indicators || [];
+  const safeAppraisal = appraisal && typeof appraisal === 'object' ? appraisal : {};
+  const reviewData = reviewType === 'self' ? safeAppraisal.selfAppraisal : safeAppraisal.supervisorReview;
+  const safeReviewData = reviewData && typeof reviewData === 'object' ? reviewData : {};
+  const indicators = Array.isArray(safeReviewData.indicators) ? safeReviewData.indicators : [];
   
   const scores = indicators
     .map(indicator => reviewType === 'self' ? indicator.selfScore : indicator.supervisorScore)
@@ -309,16 +326,17 @@ export const calculateAppraisalScore = (appraisal, reviewType = 'self') => {
 };
 
 export const canEditAppraisal = (appraisal, userRole, userId) => {
-  if (!appraisal) return false;
+  const safeAppraisal = appraisal && typeof appraisal === 'object' ? appraisal : {};
+  if (!safeAppraisal) return false;
   
   // CEO can always edit unlocked appraisals
-  if (userRole === 'ceo' && appraisal.status !== APPRAISAL_STATUS.LOCKED) return true;
+  if (userRole === 'ceo' && safeAppraisal.status !== APPRAISAL_STATUS.LOCKED) return true;
   
   // Admin can always edit unlocked appraisals
-  if (userRole === 'admin' && appraisal.status !== APPRAISAL_STATUS.LOCKED) return true;
+  if (userRole === 'admin' && safeAppraisal.status !== APPRAISAL_STATUS.LOCKED) return true;
   
   // Employee can only edit their own draft appraisals
-  if (userRole === 'employee' && appraisal.status === APPRAISAL_STATUS.DRAFT) return true;
+  if (userRole === 'employee' && safeAppraisal.status === APPRAISAL_STATUS.DRAFT) return true;
   
   // Supervisor can edit appraisals that are submitted (for review)
   if (userRole === 'supervisor' && appraisal.status === APPRAISAL_STATUS.SUBMITTED) return true;
@@ -327,7 +345,8 @@ export const canEditAppraisal = (appraisal, userRole, userId) => {
 };
 
 export const canViewGrade = (appraisal, userRole, userId, settings) => {
-  if (!appraisal) return false;
+  const safeAppraisal = appraisal && typeof appraisal === 'object' ? appraisal : {};
+  if (!safeAppraisal) return false;
   
   const gradeVisibility = settings?.kpi?.appraisal?.gradeVisibility || {};
   
@@ -335,7 +354,7 @@ export const canViewGrade = (appraisal, userRole, userId, settings) => {
   if (userRole === 'ceo' || userRole === 'admin') return true;
   
   // Supervisor can see grades they've assigned
-  if (userRole === 'supervisor' && appraisal.supervisorReview?.reviewerId === userId) return true;
+  if (userRole === 'supervisor' && safeAppraisal.supervisorReview?.reviewerId === userId) return true;
   
   // Employee can see their own self-appraisal grades
   if (userRole === 'employee') {

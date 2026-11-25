@@ -232,9 +232,27 @@ const createTravelRequest = async (req, res, next) => {
       const recipients = [];
       let isCEOFirstApprover = false;
 
-      // Add only the immediate supervisor (first approver) - not all approvers
-      if (approverIds && approverIds.length > 0) {
-        // Only send to the first approver (immediate supervisor)
+      // Check if applicant is CEO and use CEO approval routing setting
+      if (req.user.role === 'ceo') {
+        const notificationSettings = await travelModel.getTravelNotificationSettings();
+        const ceoApprovalRouting = notificationSettings.ceoApprovalRouting || 'chairman';
+        
+        if (ceoApprovalRouting === 'self') {
+          // CEO approves herself - send email to CEO (unless she's the applicant, which we filter out later)
+          isCEOFirstApprover = true;
+          recipients.push({ id: req.user.id, fullName: req.user.fullName, email: req.user.email, role: req.user.role });
+        } else {
+          // Chairman approves CEO - send email to chairman
+          const chairmanResults = await query(
+            `SELECT id, first_name, last_name, email, role FROM users WHERE role IN ('chairman', 'chairperson', 'chair')`
+          );
+          if (chairmanResults.rows.length > 0) {
+            const chairman = chairmanResults.rows[0];
+            recipients.push({ id: chairman.id, fullName: `${chairman.first_name} ${chairman.last_name}`, email: chairman.email, role: chairman.role });
+          }
+        }
+      } else if (approverIds && approverIds.length > 0) {
+        // Non-CEO applicant - send to first approver
         const firstApproverId = approverIds[0];
         const approverResults = await query(
           `SELECT id, first_name, last_name, email, role FROM users WHERE id = $1`,
@@ -250,9 +268,12 @@ const createTravelRequest = async (req, res, next) => {
         console.log('No approvers found for employee:', req.user.id);
       }
 
-      if (recipients.length > 0) {
+      // Filter out the applicant from recipients to avoid sending email to themselves
+      const filteredRecipients = recipients.filter(r => String(r.id) !== String(req.user.id));
+      
+      if (filteredRecipients.length > 0) {
         await sendTravelRequestSubmittedEmail({
-          recipients,
+          recipients: filteredRecipients,
           travelRequest: request,
           applicantName: req.user.fullName,
           isCEOApprover: isCEOFirstApprover
@@ -587,6 +608,9 @@ const deleteTravelRequestPermanently = async (req, res, next) => {
       return res.status(403).json({ message: 'Only the IT Officer can delete travel requests.' });
     }
 
+    // IT Officer can delete ALL travel requests including approved ones
+    // No status restriction
+
     const receipts = await travelModel.listTravelReceiptsForCleanup(id);
     for (const receipt of receipts) {
       await deleteStoredDocument({
@@ -867,14 +891,15 @@ const getTravelNotificationSettings = async (req, res, next) => {
 
 const updateTravelNotificationSettings = async (req, res, next) => {
   try {
-    const { recipientIds, viewAllTravelRequestsIds, settledEditorIds } = req.body;
+    const { recipientIds, viewAllTravelRequestsIds, settledEditorIds, ceoApprovalRouting } = req.body;
 
-    console.log('updateTravelNotificationSettings - Received:', { recipientIds, viewAllTravelRequestsIds, settledEditorIds });
+    console.log('updateTravelNotificationSettings - Received:', { recipientIds, viewAllTravelRequestsIds, settledEditorIds, ceoApprovalRouting });
 
     const settings = await travelModel.updateTravelNotificationSettings({
       recipientIds: recipientIds || [],
       viewAllTravelRequestsIds: viewAllTravelRequestsIds || [],
       settledEditorIds: settledEditorIds || [],
+      ceoApprovalRouting: ceoApprovalRouting || 'chairman',
       updatedBy: req.user.id
     });
 
@@ -887,7 +912,7 @@ const updateTravelNotificationSettings = async (req, res, next) => {
       entityType: 'travel_notification_settings',
       entityId: String(settings.id || '1'),
       description: `${req.user.fullName} updated travel notification settings.`,
-      metadata: { recipientIds, viewAllTravelRequestsIds, settledEditorIds },
+      metadata: { recipientIds, viewAllTravelRequestsIds, settledEditorIds, ceoApprovalRouting },
       ipAddress: req.ip
     });
 
@@ -1043,6 +1068,11 @@ const updateTravelRequestSettled = async (req, res, next) => {
       return res.status(403).json({ message: 'You do not have permission to edit settled status.' });
     }
 
+    // Only allow settling approved travel requests
+    if (settled && request.status !== 'approved') {
+      return res.status(400).json({ message: 'Cannot settle a travel request that has not been approved.' });
+    }
+
     await travelModel.updateTravelRequestSettled(id, settled);
 
     await logAction({
@@ -1064,7 +1094,16 @@ const updateTravelRequestSettled = async (req, res, next) => {
 
 const getPendingTravelRequestCount = async (req, res, next) => {
   try {
-    const count = await travelModel.getPendingTravelRequestCountForUserExcludingViewed(req.user.id, req.user.role, req.user.positionTitle);
+    const count = await travelModel.getPendingTravelRequestCountForUser(req.user.id, req.user.role);
+    res.json({ count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getUnsettledTravelRequestCount = async (req, res, next) => {
+  try {
+    const count = await travelModel.getUnsettledTravelRequestCountForUser(req.user.id, req.user.role);
     res.json({ count });
   } catch (error) {
     next(error);
@@ -1100,10 +1139,11 @@ module.exports = {
   getTravelRoutingSettings,
   updateTravelRoutingSettings,
   getAllEmployeeRouting,
+  getPendingTravelRequestCount,
+  getUnsettledTravelRequestCount,
   getApproverForEmployee,
   addEmployeeRouting,
   removeEmployeeRouting,
-  getPendingTravelRequestCount,
   markTravelRequestAsViewed,
   updateTravelRequestSettled
 };

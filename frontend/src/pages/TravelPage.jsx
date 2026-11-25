@@ -13,11 +13,30 @@ import { formatDateOnly } from '../utils/leaveCalendar';
 const statusConfig = {
   pending: { label: 'Pending Supervisor Approval', icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', highlight: true },
   pending_ceo: { label: 'Pending CEO Approval', icon: Clock, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', highlight: true },
-  approved: { label: 'Approved', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200', highlight: false },
+  approved: { label: 'Approved', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-white', borderColor: 'border-slate-200', highlight: false },
+  approved_unsettled: { label: 'Approved', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', highlight: true },
   rejected: { label: 'Rejected', icon: XCircle, color: 'text-rose-600', bgColor: 'bg-rose-50', borderColor: 'border-rose-200', highlight: false },
   cancelled: { label: 'Cancelled', icon: XCircle, color: 'text-slate-600', bgColor: 'bg-slate-50', borderColor: 'border-slate-200', highlight: false },
   in_progress: { label: 'In Progress', icon: Calendar, color: 'text-blue-600', bgColor: 'bg-blue-50', borderColor: 'border-blue-200', highlight: false },
-  completed: { label: 'Completed', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-emerald-50', borderColor: 'border-emerald-200', highlight: false }
+  completed: { label: 'Completed', icon: CheckCircle, color: 'text-emerald-600', bgColor: 'bg-white', borderColor: 'border-slate-200', highlight: false }
+};
+
+// Get status config with unsettled override
+const getStatusConfig = (request, user) => {
+  const baseConfig = statusConfig[request.status] || statusConfig.pending;
+  
+  // For finance, admin, and administrator_and_membership_officer: unsettled requests get amber background
+  const canSettleRoles = ['admin', 'finance', 'administrator_and_membership_officer'];
+  if (canSettleRoles.includes(user.role) && !request.settled) {
+    return {
+      ...baseConfig,
+      bgColor: 'bg-amber-50',
+      borderColor: 'border-amber-200',
+      highlight: true
+    };
+  }
+  
+  return baseConfig;
 };
 
 // Helper function to determine if a request is local movement
@@ -72,7 +91,14 @@ const canDecideTravel = (user, request, employeeApprovers) => {
 };
 
 const canDeleteTravel = (user, request) => {
-  return user.role === 'admin' && ['approved', 'rejected'].includes(request.status);
+  // IT Officer can delete ALL travel requests including approved ones
+  return user.role === 'admin';
+};
+
+const canChairmanApprove = (user, request) => {
+  // Chairman can only approve/reject CEO requests
+  const chairmanRoles = ['chairman', 'chairperson', 'chair'];
+  return chairmanRoles.includes(user.role) && request.userId !== user.id && request.status === 'pending_ceo';
 };
 
 export default function TravelPage() {
@@ -93,6 +119,7 @@ export default function TravelPage() {
   const [users, setUsers] = useState([]);
   const [canEditSettled, setCanEditSettled] = useState(false);
   const [isNotificationRecipient, setIsNotificationRecipient] = useState(false);
+  const [showMoreOwnRequests, setShowMoreOwnRequests] = useState(false);
 
   const loadRequests = async () => {
     try {
@@ -296,6 +323,25 @@ export default function TravelPage() {
     // Sorting logic
     let comparison = 0;
     
+    // Priority sorting based on user role
+    if (user.role === 'ceo') {
+      // CEO: pending_ceo requests first
+      const aPendingCEO = a.status === 'pending_ceo';
+      const bPendingCEO = b.status === 'pending_ceo';
+      if (aPendingCEO && !bPendingCEO) return -1;
+      if (!aPendingCEO && bPendingCEO) return 1;
+    } else {
+      // Finance, admin, administrator_and_membership_officer: unsettled requests first
+      const canSettleRoles = ['admin', 'finance', 'administrator_and_membership_officer'];
+      if (canSettleRoles.includes(user.role)) {
+        const aUnsettled = !a.settled;
+        const bUnsettled = !b.settled;
+        if (aUnsettled && !bUnsettled) return -1;
+        if (!aUnsettled && bUnsettled) return 1;
+      }
+    }
+    
+    // Then sort by the selected field
     switch (sortBy) {
       case 'date':
         comparison = new Date(a.createdAt) - new Date(b.createdAt);
@@ -318,6 +364,13 @@ export default function TravelPage() {
     
     return sortOrder === 'asc' ? comparison : -comparison;
   });
+
+  // Separate own requests from other requests
+  const ownRequests = filteredRequests.filter(r => String(r.userId) === String(user.id));
+  const otherRequests = filteredRequests.filter(r => String(r.userId) !== String(user.id));
+
+  // Show only 2 own requests initially, rest on "Show More"
+  const displayedOwnRequests = showMoreOwnRequests ? ownRequests : ownRequests.slice(0, 2);
 
   const teamRequests = requests.filter((request) => {
     if (user.role === 'supervisor') {
@@ -422,22 +475,22 @@ export default function TravelPage() {
           />
         ) : (
           <>
-            {/* My Travel Requests Section - for finance officers and supervisors */}
-            {(user.role === 'finance' || user.role === 'supervisor') && (
+            {/* My Travel Requests Section - for finance, admin, administrator_and_membership_officer, CEO, and chairman */}
+            {(['admin', 'finance', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role)) && (
               <>
-                <div className="border-b border-slate-200 pb-3 mb-4">
-                  <h3 className="text-lg font-semibold text-slate-900">My Travel Requests</h3>
+                <div className="border-b-2 border-slate-300 pb-4 mb-6">
+                  <h3 className="text-xl font-bold text-slate-900">My Travel Requests</h3>
                   <p className="text-sm text-slate-500">Your own travel requests</p>
                 </div>
-                {filteredRequests.filter(r => String(r.userId) === String(user.id)).length === 0 ? (
+                {displayedOwnRequests.length === 0 ? (
                   <EmptyState
                     title="No travel requests found"
                     description="You have not submitted any travel requests yet."
                   />
                 ) : (
                   <div className="space-y-4 mb-6">
-                    {filteredRequests.filter(r => String(r.userId) === String(user.id)).map((request) => {
-                      const config = statusConfig[request.status] || statusConfig.pending;
+                    {displayedOwnRequests.map((request) => {
+                      const config = getStatusConfig(request, user);
                       const StatusIcon = config.icon;
                       const shouldHighlightForRequester = !request.viewedByUser && ['pending', 'pending_ceo', 'approved', 'in_progress', 'completed'].includes(request.status);
                       // For requester: if status is pending_ceo, it means CEO is the approver, so show "Pending CEO Approval"
@@ -448,7 +501,7 @@ export default function TravelPage() {
                         <div
                           key={request.id}
                           className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${
-                            shouldHighlightForRequester ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'
+                            shouldHighlightForRequester ? 'border-amber-400 bg-amber-50' : `${config.borderColor} ${config.bgColor}`
                           }`}
                           onClick={() => navigate(`/travel/${request.id}`)}
                         >
@@ -608,6 +661,20 @@ export default function TravelPage() {
                                   {request.settled ? 'Settled' : 'Settle'}
                                 </button>
                               )}
+                              {/* IT Officer (admin) can delete any travel request */}
+                              {user.role === 'admin' && (
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50 flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteModal({ open: true, request });
+                                  }}
+                                  title="Delete"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -615,26 +682,35 @@ export default function TravelPage() {
                     })}
                   </div>
                 )}
+                {ownRequests.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreOwnRequests(!showMoreOwnRequests)}
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-6"
+                  >
+                    {showMoreOwnRequests ? 'Show Less' : `Show More (${ownRequests.length - 2} more)`}
+                  </button>
+                )}
               </>
             )}
 
             {/* Other Travel Requests Section */}
-            {(user.role === 'finance' || user.role === 'supervisor') && (
-              <div className="border-b border-slate-200 pb-3 mb-4">
-                <h3 className="text-lg font-semibold text-slate-900">Other Travel Requests</h3>
+            {(['admin', 'finance', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair'].includes(user.role)) && (
+              <div className="border-b-2 border-slate-300 pb-4 mb-6">
+                <h3 className="text-xl font-bold text-slate-900">Other Travel Requests</h3>
                 <p className="text-sm text-slate-500">Travel requests from other staff members</p>
               </div>
             )}
 
-            {((user.role === 'finance' || user.role === 'supervisor') ? filteredRequests.filter(r => String(r.userId) !== String(user.id)) : filteredRequests).length === 0 ? (
+            {otherRequests.length === 0 ? (
               <EmptyState
                 title="No travel requests found"
                 description={user.role === 'employee' ? 'You have not submitted any travel requests yet.' : 'No travel requests have been submitted yet.'}
               />
             ) : (
               <div className="space-y-4">
-                {((user.role === 'finance' || user.role === 'supervisor') ? filteredRequests.filter(r => String(r.userId) !== String(user.id)) : filteredRequests).map((request) => {
-                  const config = statusConfig[request.status] || statusConfig.pending;
+                {otherRequests.map((request) => {
+                  const config = getStatusConfig(request, user);
                   const StatusIcon = config.icon;
                   // Highlight pending requests for supervisors (not for staff's own requests) - keep highlighting until approved/rejected (not when opened)
                   // Highlight pending_ceo requests for CEO (not for staff's own requests) - keep highlighting until approved/rejected (not when opened)
@@ -652,7 +728,7 @@ export default function TravelPage() {
                     <div
                       key={request.id}
                       className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${
-                        shouldHighlight ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-white'
+                        shouldHighlight ? 'border-amber-400 bg-amber-50' : `${config.borderColor} ${config.bgColor}`
                       }`}
                       onClick={() => navigate(`/travel/${request.id}`)}
                     >
@@ -782,11 +858,20 @@ export default function TravelPage() {
                     </div>
                     <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto justify-end">
                       {/* Settled toggle for users with edit permission */}
-                      {canEditSettled ? (
+                      {canEditSettled && request.status !== 'rejected' ? (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            // Check if request is approved before showing modal
+                            if (request.status !== 'approved') {
+                              setNotice({
+                                open: true,
+                                title: 'Unable to Settle',
+                                description: 'Cannot settle an unapproved travel request.'
+                              });
+                              return;
+                            }
                             setSettleModal({ open: true, request, action: request.settled ? 'unsettle' : 'settle' });
                           }}
                           className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
@@ -833,6 +918,20 @@ export default function TravelPage() {
                           <Trash2 size={14} />
                         </button>
                       )}
+                      {/* IT Officer (admin) can delete any travel request */}
+                      {user.role === 'admin' && !canDeleteTravel(user, request) && (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteModal({ open: true, request });
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -856,12 +955,12 @@ export default function TravelPage() {
         >
           <div className="space-y-4">
             {teamRequests.slice(0, 5).map((request) => {
-              const config = statusConfig[request.status] || statusConfig.pending;
+              const config = getStatusConfig(request, user);
               const StatusIcon = config.icon;
               return (
                 <div
                   key={request.id}
-                  className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md"
+                  className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${config.borderColor} ${config.bgColor}`}
                   onClick={() => navigate(`/travel/${request.id}`)}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -989,7 +1088,7 @@ export default function TravelPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {canDecideTravel(user, request, employeeApprovers) && (
+                      {(canDecideTravel(user, request, employeeApprovers) || canChairmanApprove(user, request)) && (
                         <div className="flex w-full sm:w-auto gap-2">
                           <button
                             type="button"

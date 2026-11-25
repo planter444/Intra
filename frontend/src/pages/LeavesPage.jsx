@@ -64,8 +64,9 @@ export default function LeavesPage() {
   const [balances, setBalances] = useState([]);
   const [requests, setRequests] = useState([]);
   const isCeo = user?.role === 'ceo';
-  const canApplyForLeave = !isCeo;
-  const showPersonalHistory = !isCeo;
+  const isChairman = user?.role === 'chairman' || user?.role === 'chairperson' || user?.role === 'chair' || user?.roleTitle?.toLowerCase().includes('chair');
+  const canApplyForLeave = !isChairman; // Chairman cannot apply for leave
+  const showPersonalHistory = !isCeo && !isChairman; // CEO and Chairman see overview, not personal history
   const leaveCardsOpacity = Number(settings?.interface?.pageExperience?.leave?.leaveCardsOpacity ?? 1) || 1;
 
   useEffect(() => {
@@ -108,8 +109,30 @@ export default function LeavesPage() {
       return externalRequests.filter((request) => String(request.employeeSupervisorId) === String(user.id));
     }
 
+    if (user?.role === 'chairman' || user?.role === 'chairperson' || user?.role === 'chair' || user?.roleTitle?.toLowerCase().includes('chair')) {
+      // Chairman/Chairperson sees all leave requests, CEO requests at the top
+      const ceoRequests = externalRequests.filter(r =>
+        r.employeeName?.toLowerCase().includes('ceo') ||
+        r.employeePositionTitle?.toLowerCase().includes('ceo')
+      );
+      const otherRequests = externalRequests.filter(r =>
+        !(r.employeeName?.toLowerCase().includes('ceo') ||
+        r.employeePositionTitle?.toLowerCase().includes('ceo'))
+      );
+      return [...ceoRequests, ...otherRequests];
+    }
+
     if (user?.role === 'admin' || user?.role === 'ceo') {
-      return externalRequests;
+      // CEO also sees CEO requests at the top
+      const ceoRequests = externalRequests.filter(r =>
+        r.employeeName?.toLowerCase().includes('ceo') ||
+        r.employeePositionTitle?.toLowerCase().includes('ceo')
+      );
+      const otherRequests = externalRequests.filter(r =>
+        !(r.employeeName?.toLowerCase().includes('ceo') ||
+        r.employeePositionTitle?.toLowerCase().includes('ceo'))
+      );
+      return [...ceoRequests, ...otherRequests];
     }
 
     return [];
@@ -145,19 +168,23 @@ export default function LeavesPage() {
         title={settings?.labels?.leaveModuleTitle || 'Leave Management'}
         subtitle="Track leave balances, request history, approval progress, and incoming review work from one dashboard."
         actions={[
-          ...(canApplyForLeave ? [
+          ...(isCeo ? [
+            <button key="my-leave" type="button" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg" onClick={() => navigate('/leaves/my-leave')}>
+              <span className="inline-flex items-center gap-2"><Plus size={16} />My Leave</span>
+            </button>
+          ] : canApplyForLeave ? [
             <button key="apply" type="button" className="rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white shadow-lg" onClick={() => navigate('/leaves/new')}>
               <span className="inline-flex items-center gap-2"><Plus size={16} />Apply for Leave</span>
             </button>
           ] : []),
-          ...(user?.role === 'admin' || user?.role === 'ceo' ? [
+          ...(user?.role === 'admin' || user?.role === 'ceo' || user?.role === 'chairman' || user?.role === 'chairperson' || user?.role === 'chair' || user?.roleTitle?.toLowerCase().includes('chair') ? [
             <Link key="report" to="/leave-report" className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               <span className="inline-flex items-center gap-2"><FileText size={16} />Leave Report</span>
             </Link>
           ] : [])
         ]}
       />
-      {isCeo ? (
+      {isCeo || isChairman ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {(settings?.leaveTypes || []).map((lt, index) => (
             <CeoLeaveTypeCard key={lt.code || lt.label || index} lt={lt} index={index} opacity={leaveCardsOpacity} />
@@ -195,6 +222,7 @@ export default function LeavesPage() {
         </SectionCard>
         ) : null}
 
+        {!isChairman && (
         <SectionCard
           title={user?.role === 'supervisor' ? 'Team Leaves' : user?.role === 'ceo' || user?.role === 'admin' ? 'Leaves' : 'Leave status tracker'}
           subtitle={user?.role === 'supervisor'
@@ -208,27 +236,35 @@ export default function LeavesPage() {
               <div className="space-y-3">
                 {visibleLeaveRequests.map((request) => {
                   const isPending = reviewRequests.some((entry) => entry.id === request.id);
+                  const isCeoRequest = request.employeeName?.toLowerCase().includes('ceo') || request.employeePositionTitle?.toLowerCase().includes('ceo');
+                  const isChairmanSupervisor = request.supervisorApproverRole === 'chairman' || request.supervisorApproverRole === 'chairperson' || request.supervisorApproverRole === 'chair';
 
                   return (
-                    <div key={request.id} className={`rounded-2xl border px-4 py-4 transition ${isPending ? 'border-amber-300 bg-amber-100/80 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_18px_40px_rgba(245,158,11,0.16)]' : 'border-slate-200 bg-white'}`}>
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium text-slate-900">{request.employeeName}</p>
-                            {isPending ? <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Needs your approval</span> : null}
-                          </div>
-                          <p className="text-sm text-slate-500">{request.leaveTypeLabel} · {formatDateRangeDisplay(request.startDate, request.endDate)}</p>
+                    <div key={request.id} className={`rounded-2xl border px-4 py-4 transition ${
+                      isCeoRequest && request.status.startsWith('pending') ? 'border-amber-300 bg-amber-100/80 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_18px_40px_rgba(245,158,11,0.16)]' :
+                      isPending ? 'border-amber-300 bg-amber-100/80 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_18px_40px_rgba(245,158,11,0.16)]' :
+                      'border-slate-200 bg-white'
+                    }`}>
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-slate-900">{request.employeeName}</p>
+                          {isCeoRequest ? <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">CEO Request</span> : null}
+                          {isPending && !isCeoRequest ? <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Needs your approval</span> : null}
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isPending ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                            {formatStatusLabel(request.status)}
-                          </span>
-                          <button type="button" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700" onClick={() => navigate(`/leaves/${request.id}`)}>
-                            <Eye size={16} />View
-                          </button>
-                        </div>
+                        <p className="mt-1 text-sm text-slate-500">{request.leaveTypeLabel} · {formatDateRangeDisplay(request.startDate, request.endDate)} ({request.daysRequested} day(s))</p>
                       </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${request.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : request.status === 'rejected' ? 'bg-rose-100 text-rose-700' : request.status.startsWith('pending') ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {formatStatusLabel(request.status)}
+                        </span>
+                        <button type="button" className="inline-flex items-center gap-2 text-sm font-medium text-blue-600" onClick={() => navigate(`/leaves/${request.id}`)}>
+                          <Eye size={16} />View
+                        </button>
+                      </div>
+                      <LeaveStatusTimeline request={request} compact isChairmanViewing={isChairman} isCeoRequest={isCeoRequest} isChairmanSupervisor={isChairmanSupervisor} />
                     </div>
+                  </div>
                   );
                 })}
               </div>
@@ -256,6 +292,54 @@ export default function LeavesPage() {
             <EmptyState title="No tracked leave requests" description="Once you submit a leave request, its workflow progress will appear here." />
           )}
         </SectionCard>
+        )}
+
+        {isChairman && (
+        <SectionCard
+          title="Leaves"
+          subtitle="Company leave requests currently visible to you."
+        >
+          {visibleLeaveRequests.length ? (
+            <div className="space-y-3">
+              {visibleLeaveRequests.map((request) => {
+                const isPending = reviewRequests.some((entry) => entry.id === request.id);
+                const isCeoRequest = request.employeeName?.toLowerCase().includes('ceo') || request.employeePositionTitle?.toLowerCase().includes('ceo');
+                const isChairmanSupervisor = request.supervisorApproverRole === 'chairman' || request.supervisorApproverRole === 'chairperson' || request.supervisorApproverRole === 'chair';
+
+                return (
+                  <div key={request.id} className={`rounded-2xl border px-4 py-4 transition ${
+                    isCeoRequest && request.status.startsWith('pending') ? 'border-amber-300 bg-amber-100/80 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_18px_40px_rgba(245,158,11,0.16)]' :
+                    isPending ? 'border-amber-300 bg-amber-100/80 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_18px_40px_rgba(245,158,11,0.16)]' :
+                    'border-slate-200 bg-white'
+                  }`}>
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-slate-900">{request.employeeName}</p>
+                          {isCeoRequest ? <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">CEO Request</span> : null}
+                          {isPending && !isCeoRequest ? <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Needs your approval</span> : null}
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500">{request.leaveTypeLabel} · {formatDateRangeDisplay(request.startDate, request.endDate)} ({request.daysRequested} day(s))</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${request.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : request.status === 'rejected' ? 'bg-rose-100 text-rose-700' : request.status.startsWith('pending') ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {isCeoRequest && isChairmanSupervisor && request.status === 'pending_ceo' ? 'Pending Chairperson' : formatStatusLabel(request.status)}
+                        </span>
+                        <button type="button" className="inline-flex items-center gap-2 text-sm font-medium text-blue-600" onClick={() => navigate(`/leaves/${request.id}`)}>
+                          <Eye size={16} />View
+                        </button>
+                      </div>
+                      <LeaveStatusTimeline request={request} compact isChairmanViewing={isChairman} isCeoRequest={isCeoRequest} isChairmanSupervisor={isChairmanSupervisor} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState title="No leave requests" description="Company leave requests will appear here." />
+          )}
+        </SectionCard>
+        )}
       </div>
 
       {!balances.length && !myRequests.length && !visibleLeaveRequests.length ? <EmptyState title="No leave records yet" description="Leave balances and request history will appear here when available." /> : null}

@@ -9,15 +9,21 @@ const { countKenyaLeaveDays, formatDateOnly, getNextWorkingDate } = require('../
 
 const mapTimelineEvents = (request, auditTrail) => {
   const submittedEvent = auditTrail.find((entry) => entry.action === 'LEAVE_CREATE');
-  const supervisorEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT', 'LEAVE_SUPERVISOR_DECISION_REVISED'].includes(entry.action));
+  const supervisorEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_SUPERVISOR_APPROVE', 'LEAVE_SUPERVISOR_REJECT', 'LEAVE_SUPERVISOR_DECISION_REVISED', 'LEAVE_CHAIRMAN_APPROVE', 'LEAVE_CHAIRMAN_REJECT'].includes(entry.action));
   const ceoEvent = [...auditTrail].reverse().find((entry) => ['LEAVE_CEO_APPROVE', 'LEAVE_CEO_REJECT', 'LEAVE_CEO_DECISION_REVISED', 'LEAVE_HR_APPROVE', 'LEAVE_HR_REJECT'].includes(entry.action) && ['ceo', 'admin'].includes(entry.actorRole));
   const isCeoSupervisor = request.supervisorApproverRole === 'ceo';
+  const isChairmanSupervisor = request.supervisorApproverRole === 'chairman' || request.supervisorApproverRole === 'chairperson';
   const hasSupervisorStage = Boolean(
     request.requiresSupervisorReview
     || supervisorEvent
     || request.status === 'pending_supervisor'
     || request.supervisorApproverId
-  ) && !isCeoSupervisor;
+  ) && !isCeoSupervisor && !isChairmanSupervisor;
+
+  const finalStageLabel = isChairmanSupervisor ? 'Chairperson' : isCeoSupervisor ? 'CEO' : 'CEO';
+
+  // For timeline label, always use Chairperson for chairman supervisor
+  const timelineCeoLabel = isChairmanSupervisor ? 'Chairperson' : finalStageLabel;
 
   const effectiveCeoEvent = isCeoSupervisor && !ceoEvent ? supervisorEvent : ceoEvent;
   const effectiveCeoActorName = isCeoSupervisor
@@ -40,7 +46,7 @@ const mapTimelineEvents = (request, auditTrail) => {
       decision: supervisorEvent?.action?.includes('APPROVE') ? 'approved' : supervisorEvent?.action?.includes('REJECT') ? 'rejected' : null
     } : null,
     ceo: {
-      label: 'CEO',
+      label: timelineCeoLabel,
       time: effectiveCeoEvent?.createdAt || null,
       actorName: effectiveCeoActorName,
       comment: effectiveCeoComment,
@@ -49,10 +55,18 @@ const mapTimelineEvents = (request, auditTrail) => {
   };
 };
 
-const oversightRoles = ['admin', 'ceo', 'finance'];
+const oversightRoles = ['admin', 'ceo', 'finance', 'chairman', 'chairperson', 'chair'];
 
 const canViewOversightLeaveData = (role) => oversightRoles.includes(role);
 const canAccessLeaveOverview = (role) => ['employee', 'supervisor', ...oversightRoles].includes(role);
+
+const isChairmanRole = (user) => {
+  if (!user) return false;
+  const role = user.role?.toLowerCase();
+  const roleTitle = user.roleTitle?.toLowerCase();
+  return role === 'chairman' || role === 'chairperson' || role === 'chair' ||
+         roleTitle?.includes('chair') || roleTitle?.includes('chairman') || roleTitle?.includes('chairperson');
+};
 
 const getLeaveOverviewUsers = async (currentUser) => {
   if (canViewOversightLeaveData(currentUser.role)) {
@@ -106,7 +120,7 @@ const getLeaveApplicationRecipients = async (request) => {
     const supervisor = await userModel.findById(request.supervisorApproverId);
     return {
       recipients: supervisor && supervisor.isActive && !supervisor.isDeleted ? [supervisor] : [],
-      stageLabel: 'supervisor review'
+      stageLabel: request.supervisorApproverRole === 'chairman' || request.supervisorApproverRole === 'chairperson' ? 'Chairperson review' : 'supervisor review'
     };
   }
 
@@ -201,20 +215,20 @@ const calculateRequestedDays = (startDate, endDate) => {
   return days && days > 0 ? days : null;
 };
 
-const filterGenderRestrictedItems = (items, gender) => items.filter((item) => {
-  if (item.code === 'maternity') {
-    return gender === 'female';
-  }
-
-  if (item.code === 'paternity') {
-    return gender === 'male';
-  }
-
-  return true;
-});
+const filterGenderRestrictedItems = (items, gender) => {
+  return items.filter((item) => {
+    if (item.code === 'maternity') {
+      return gender === 'female';
+    }
+    if (item.code === 'paternity') {
+      return gender === 'male';
+    }
+    return true;
+  });
+};
 
 const canAccessRequest = (currentUser, request) => {
-  if (canViewOversightLeaveData(currentUser.role)) {
+  if (canViewOversightLeaveData(currentUser.role) || isChairmanRole(currentUser)) {
     return true;
   }
 
@@ -230,15 +244,10 @@ const canRequesterModify = (currentUser, request) => {
     return false;
   }
 
-  // Editable/cancellable as long as no approval level has taken any action yet.
   if (request.status === 'pending_supervisor' || request.status === 'pending_hr') {
     return true;
   }
 
-  // pending_ceo is reachable two ways: (1) the requester's supervisor is the CEO,
-  // so routing skips the supervisor stage entirely and no action has been taken yet
-  // (requiresSupervisorReview is false in that case); or (2) a supervisor already
-  // approved and forwarded it to the CEO, which counts as an action already taken.
   return request.status === 'pending_ceo' && !request.requiresSupervisorReview;
 };
 
@@ -271,7 +280,6 @@ const validateLeaveInputs = async ({ user, leaveTypeCode, startDate, endDate, ha
     return { status: 400, message: 'Invalid leave dates.' };
   }
 
-
   const balances = filterGenderRestrictedItems(await leaveModel.getBalancesForUser(user.id), user.gender);
   const currentBalance = balances.find((entry) => entry.leaveTypeId === leaveType.id);
 
@@ -291,30 +299,93 @@ const validateLeaveInputs = async ({ user, leaveTypeCode, startDate, endDate, ha
 };
 
 const buildLeaveRouting = async (user) => {
-  // Any requester with an assigned, active supervisor is routed to that supervisor
-  // first - including a supervisor who has their own supervisor above them. Once
-  // that supervisor decides, decideRequest sends the request straight to the CEO
-  // (a single hop) rather than chaining further up the hierarchy.
-  const supervisor = user.supervisorId ? await userModel.findById(user.supervisorId) : null;
-  const shouldStartWithSupervisor = Boolean(supervisor && supervisor.isActive && !supervisor.isDeleted);
-  const supervisorIsCeo = shouldStartWithSupervisor && supervisor.role === 'ceo';
+  if (user.role === 'ceo') {
+    const { query } = require('../config/db');
+    const chairmanResult = await query(
+      `SELECT id, first_name, last_name FROM users WHERE (role = $1 OR role = $2 OR role = $3 OR role_title ILIKE $4) AND is_active = true AND is_deleted = false LIMIT 1`,
+      ['chairman', 'chairperson', 'chair', '%chair%']
+    );
+    const chairman = chairmanResult.rows[0];
+    if (!chairman) {
+      return {
+        initialStatus: 'pending_supervisor',
+        requiresSupervisorReview: true,
+        supervisorApproverId: null
+      };
+    }
+
+    return {
+      initialStatus: 'pending_supervisor',
+      requiresSupervisorReview: true,
+      supervisorApproverId: chairman.id
+    };
+  }
+
+  const self = await userModel.findById(user.id);
+  if (!self) {
+    return {
+      initialStatus: 'pending_supervisor',
+      requiresSupervisorReview: true,
+      supervisorApproverId: null
+    };
+  }
+
+  const supervisor = await userModel.findById(self.supervisorId);
+  if (!supervisor || !supervisor.isActive || supervisor.isDeleted) {
+    return {
+      initialStatus: 'pending_hr',
+      requiresSupervisorReview: false,
+      supervisorApproverId: null
+    };
+  }
+
+  const isCeo = supervisor.role === 'ceo';
+  const isAdmin = supervisor.role === 'admin';
+
+  if (isCeo || isAdmin) {
+    return {
+      initialStatus: 'pending_hr',
+      requiresSupervisorReview: false,
+      supervisorApproverId: null
+    };
+  }
 
   return {
-    requiresSupervisorReview: shouldStartWithSupervisor && !supervisorIsCeo,
-    initialStatus: supervisorIsCeo ? 'pending_ceo' : shouldStartWithSupervisor ? 'pending_supervisor' : 'pending_hr',
-    supervisorApproverId: shouldStartWithSupervisor && !supervisorIsCeo ? supervisor.id : null
+    initialStatus: 'pending_supervisor',
+    requiresSupervisorReview: true,
+    supervisorApproverId: supervisor.id
   };
 };
 
 const mapSupportingDocumentPayload = async (userId, file) => {
   if (!file) {
-    return {};
+    return {
+      supportingDocumentName: null,
+      supportingDocumentStoredName: null,
+      supportingDocumentMimeType: null,
+      supportingDocumentSize: null,
+      supportingDocumentPath: null
+    };
   }
 
-  const { storedName, targetPath } = await saveDocument({
-    userId: String(userId),
-    folderType: 'other',
-    file
+  const storedName = `${Date.now()}-${file.originalname}`;
+  const targetPath = `leave-documents/${userId}/${storedName}`;
+
+  if (isRemoteStoragePath(targetPath)) {
+    return {
+      supportingDocumentName: file.originalname,
+      supportingDocumentStoredName: storedName,
+      supportingDocumentMimeType: file.mimetype,
+      supportingDocumentSize: file.size,
+      supportingDocumentPath: targetPath
+    };
+  }
+
+  await saveDocument({
+    storagePath: targetPath,
+    storedName,
+    fileBuffer: file.buffer,
+    mimeType: file.mimetype
   });
 
   return {
@@ -329,7 +400,9 @@ const mapSupportingDocumentPayload = async (userId, file) => {
 const listLeaveTypes = async (req, res, next) => {
   try {
     const leaveTypes = await leaveModel.listLeaveTypes();
-    const filteredLeaveTypes = filterGenderRestrictedItems(leaveTypes, req.user?.gender);
+    const filteredLeaveTypes = (req.user?.role === 'chairman' || req.user?.role === 'chairperson' || req.user?.role === 'chair' || req.user?.roleTitle?.toLowerCase().includes('chair'))
+      ? leaveTypes
+      : filterGenderRestrictedItems(leaveTypes, req.user?.gender);
     res.json({ leaveTypes: filteredLeaveTypes });
   } catch (error) {
     next(error);
@@ -351,11 +424,13 @@ const getBalances = async (req, res, next) => {
 
 const listRequests = async (req, res, next) => {
   try {
+    const isChairman = isChairmanRole(req.user);
     const requests = await leaveModel.listRequests({
       viewerId: req.user.id,
-      userId: req.user.role === 'employee' ? req.user.id : canViewOversightLeaveData(req.user.role) ? req.query.userId : undefined,
+      userId: req.user.role === 'employee' && !isChairman ? req.user.id : canViewOversightLeaveData(req.user.role) || isChairman ? req.query.userId : undefined,
       role: req.user.role,
-      status: req.query.status
+      status: req.query.status,
+      isChairman
     });
 
     res.json({ requests });
@@ -372,61 +447,41 @@ const getLeaveOverview = async (req, res, next) => {
 
     const now = new Date();
     const selectedYear = Math.max(2000, Math.min(2100, Number(req.query.year) || now.getFullYear()));
-    const yearStart = `${selectedYear}-01-01`;
-    const yearEnd = `${selectedYear}-12-31`;
-    const today = formatDateOnly(now);
-    const [users, approvedRequests, currentApprovedRequests] = await Promise.all([
-      getLeaveOverviewUsers(req.user),
-      leaveModel.listApprovedRequestsInRange({ startDate: yearStart, endDate: yearEnd }),
-      leaveModel.listApprovedRequestsInRange({ startDate: today, endDate: today })
-    ]);
-    const scopedUserIds = new Set(users.map((entry) => String(entry.id)));
+    const yearStart = new Date(selectedYear, 0, 1);
+    const yearEnd = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
 
-    const requestsByUserId = approvedRequests.filter((request) => scopedUserIds.has(String(request.userId))).reduce((accumulator, request) => {
-      const key = String(request.userId);
-      accumulator[key] = accumulator[key] || [];
-      accumulator[key].push(request);
-      return accumulator;
-    }, {});
+    const users = await getLeaveOverviewUsers(req.user);
+    const leaveTypes = await leaveModel.listLeaveTypes();
 
-    const currentRequestsByUserId = currentApprovedRequests.filter((request) => scopedUserIds.has(String(request.userId))).reduce((accumulator, request) => {
-      const key = String(request.userId);
-      accumulator[key] = accumulator[key] || [];
-      accumulator[key].push(request);
-      return accumulator;
-    }, {});
+    const requests = await leaveModel.listApprovedRequestsInRange({
+      startDate: yearStart,
+      endDate: yearEnd
+    });
 
-    const employees = users
-      .filter((entry) => entry.isActive && !entry.isDeleted && entry.role !== 'ceo')
-      .map((employee) => {
-        const employeeRequests = (requestsByUserId[String(employee.id)] || []).sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)));
-        const currentLeave = (currentRequestsByUserId[String(employee.id)] || [])
-          .sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)))
-          .find((request) => request.startDate <= today && request.endDate >= today) || null;
+    const employees = users.map((user) => {
+      const userRequests = requests.filter((r) => String(r.userId) === String(user.id));
+      const totalDaysTaken = userRequests.reduce((sum, r) => sum + Number(r.daysRequested || 0), 0);
+      const currentLeave = userRequests.find((r) => r.status === 'approved' && new Date(r.endDate) >= now);
+      const currentLeaveStatus = currentLeave ? 'At Leave' : 'Not on Leave';
 
-        return {
-          id: employee.id,
-          employeeNo: employee.employeeNo,
-          fullName: employee.fullName,
-          email: employee.email,
-          joinedAt: employee.joinedAt,
-          departmentName: employee.departmentName,
-          positionTitle: employee.positionTitle,
-          role: employee.role,
-          roleTitle: employee.roleTitle,
-          currentStatus: currentLeave ? 'At Leave' : 'At Work',
-          currentLeave: currentLeave ? {
-            id: currentLeave.id,
-            leaveTypeLabel: currentLeave.leaveTypeLabel,
-            startDate: currentLeave.startDate,
-            endDate: currentLeave.endDate,
-            daysRequested: currentLeave.daysRequested,
-            returnDate: getNextWorkingDate(currentLeave.endDate)
-          } : null,
-          approvedRequests: employeeRequests,
-          nextReturnDate: currentLeave ? getNextWorkingDate(currentLeave.endDate) : null
-        };
-      })
+      return {
+        id: user.id,
+        fullName: `${user.first_name} ${user.last_name}`,
+        department: user.department_name,
+        totalDaysTaken,
+        currentStatus,
+        currentLeave: currentLeave ? {
+          id: currentLeave.id,
+          leaveTypeLabel: currentLeave.leaveTypeLabel,
+          startDate: currentLeave.startDate,
+          endDate: currentLeave.endDate,
+          daysRequested: currentLeave.daysRequested,
+          returnDate: getNextWorkingDate(currentLeave.endDate)
+        } : null,
+        approvedRequests: userRequests,
+        nextReturnDate: currentLeave ? getNextWorkingDate(currentLeave.endDate) : null
+      };
+    })
       .sort((left, right) => {
         if (left.currentStatus !== right.currentStatus) {
           return left.currentStatus === 'At Leave' ? -1 : 1;
@@ -461,16 +516,14 @@ const getRequest = async (req, res, next) => {
 const createRequest = async (req, res, next) => {
   try {
     const { leaveTypeCode, startDate, endDate, reason } = req.body;
+    const validation = await validateLeaveInputs({
+      user: req.user,
+      leaveTypeCode,
+      startDate,
+      endDate,
+      hasSupportingDocument: Boolean(req.file || request.supportingDocumentPath)
+    });
 
-    if (req.user.role === 'ceo') {
-      return res.status(403).json({ message: 'CEO accounts are limited to oversight and approvals only.' });
-    }
-
-    if (!leaveTypeCode || !startDate || !endDate) {
-      return res.status(400).json({ message: 'Leave type, start date, and end date are required.' });
-    }
-
-    const validation = await validateLeaveInputs({ user: req.user, leaveTypeCode, startDate, endDate, hasSupportingDocument: Boolean(req.file) });
     if (validation.status) {
       return res.status(validation.status).json({ message: validation.message });
     }
@@ -478,6 +531,17 @@ const createRequest = async (req, res, next) => {
     const { leaveType, daysRequested } = validation;
     const routing = await buildLeaveRouting(req.user);
     const supportingDocument = await mapSupportingDocumentPayload(req.user.id, req.file);
+
+    const { query } = require('../config/db');
+    let supervisorApproverRole = null;
+    if (routing.supervisorApproverId) {
+      const supervisorResult = await query(
+        `SELECT role, role_title FROM users WHERE id = $1 LIMIT 1`,
+        [routing.supervisorApproverId]
+      );
+      const supervisor = supervisorResult.rows[0];
+      supervisorApproverRole = supervisor ? (supervisor.role_title || supervisor.role) : null;
+    }
 
     const request = await leaveModel.createRequest({
       userId: req.user.id,
@@ -489,6 +553,7 @@ const createRequest = async (req, res, next) => {
       status: routing.initialStatus,
       requiresSupervisorReview: routing.requiresSupervisorReview,
       supervisorApproverId: routing.supervisorApproverId,
+      supervisorApproverRole,
       ...supportingDocument
     });
 
@@ -589,7 +654,7 @@ const cancelRequest = async (req, res, next) => {
       });
     }
 
-    await leaveModel.deleteRequest(req.params.id);
+    await leaveModel.cancelRequest(request.id);
 
     await logAction({
       actorUserId: req.user.id,
@@ -602,7 +667,7 @@ const cancelRequest = async (req, res, next) => {
       ipAddress: req.ip
     });
 
-    res.json({ request: null });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -615,39 +680,26 @@ const downloadSupportingDocument = async (req, res, next) => {
       return res.status(404).json({ message: 'Leave request not found.' });
     }
 
-    if (!request.supportingDocumentPath) {
-      return res.status(404).json({ message: 'No supporting document is attached to this leave request.' });
-    }
-
     if (!canAccessRequest(req.user, request)) {
-      return res.status(403).json({ message: 'You do not have permission to access this document.' });
+      return res.status(403).json({ message: 'You do not have permission to view this leave request.' });
     }
 
-    const disposition = req.query.preview === 'true' ? 'inline' : 'attachment';
+    if (!request.supportingDocumentPath) {
+      return res.status(404).json({ message: 'No supporting document found for this request.' });
+    }
 
     if (isRemoteStoragePath(request.supportingDocumentPath)) {
-      await sendRemoteDocument({
-        res,
-        url: getRemoteDocumentUrl({
-          storedName: request.supportingDocumentStoredName,
-          mimeType: request.supportingDocumentMimeType,
-          fileName: request.supportingDocumentName,
-          asAttachment: req.query.preview !== 'true'
-        }),
-        mimeType: request.supportingDocumentMimeType,
-        fileName: request.supportingDocumentName,
-        disposition
-      });
+      const url = await getRemoteDocumentUrl(request.supportingDocumentPath);
+      await sendRemoteDocument({ res, url, mimeType: request.supportingDocumentMimeType, fileName: request.supportingDocumentName, disposition: 'attachment' });
       return;
     }
 
     const filePath = resolveDocumentPath(request.supportingDocumentPath);
-    res.setHeader('Content-Type', request.supportingDocumentMimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `${disposition}; filename="${request.supportingDocumentName || 'supporting-document'}"`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'Supporting document file not found.' });
+    }
 
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', next);
-    stream.pipe(res);
+    res.download(filePath, request.supportingDocumentName);
   } catch (error) {
     next(error);
   }
@@ -668,6 +720,92 @@ const decideRequest = async (req, res, next) => {
     }
 
     const normalizedComment = typeof comment === 'string' ? comment.trim() : '';
+
+    if (request.userId === req.user.id && req.user.role === 'ceo' && request.status === 'pending_supervisor') {
+      const { query } = require('../config/db');
+      const chairmanResult = await query(
+        `SELECT id, first_name, last_name FROM users WHERE (role = $1 OR role = $2 OR role = $3 OR role_title ILIKE $4) AND is_active = true AND is_deleted = false LIMIT 1`,
+        ['chairman', 'chairperson', 'chair', '%chair%']
+      );
+      const chairman = chairmanResult.rows[0];
+      if (!chairman) {
+        return res.status(400).json({ message: 'No active Chairman found to approve CEO leave requests. Please create a Chairman role in the Executive Office department.' });
+      }
+
+      const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
+      const updatedRequest = await leaveModel.updateRequestStatus({
+        id,
+        status: nextStatus,
+        supervisorApproverId: chairman.id,
+        supervisorComment: normalizedComment || null
+      });
+
+      if (nextStatus === 'approved') {
+        await leaveModel.applyApprovedDaysToBalance({
+          userId: request.userId,
+          leaveTypeId: request.leaveTypeId,
+          daysRequested: request.daysRequested
+        });
+      }
+
+      await logAction({
+        actorUserId: req.user.id,
+        actorRole: req.user.role,
+        action: decision === 'approve' ? 'LEAVE_CHAIRMAN_APPROVE' : 'LEAVE_CHAIRMAN_REJECT',
+        entityType: 'leave_request',
+        entityId: String(id),
+        description: `${req.user.fullName} ${decision}d CEO leave request ${id} with Chairman acting as approver.`,
+        metadata: { comment: normalizedComment, nextStatus },
+        ipAddress: req.ip
+      });
+
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: nextStatus,
+        reviewerName: `${chairman.first_name} ${chairman.last_name} (Chairman)`,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      return res.json({ request: updatedRequest });
+    }
+
+    if ((req.user.role === 'chairman' || req.user.role === 'chairperson' || req.user.role === 'chair') && request.status === 'pending_supervisor') {
+      const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
+      const updatedRequest = await leaveModel.updateRequestStatus({
+        id,
+        status: nextStatus,
+        supervisorApproverId: req.user.id,
+        supervisorComment: normalizedComment || null
+      });
+
+      if (nextStatus === 'approved') {
+        await leaveModel.applyApprovedDaysToBalance({
+          userId: request.userId,
+          leaveTypeId: request.leaveTypeId,
+          daysRequested: request.daysRequested
+        });
+      }
+
+      await logAction({
+        actorUserId: req.user.id,
+        actorRole: req.user.role,
+        action: decision === 'approve' ? 'LEAVE_CHAIRMAN_APPROVE' : 'LEAVE_CHAIRMAN_REJECT',
+        entityType: 'leave_request',
+        entityId: String(id),
+        description: `${req.user.fullName} ${decision}d CEO leave request ${id} as Chairman.`,
+        metadata: { comment: normalizedComment, nextStatus },
+        ipAddress: req.ip
+      });
+
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: nextStatus,
+        reviewerName: req.user.fullName,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      return res.json({ request: updatedRequest });
+    }
 
     if (request.status === 'pending_supervisor') {
       if (String(request.supervisorApproverId) !== String(req.user.id)) {
@@ -716,10 +854,8 @@ const decideRequest = async (req, res, next) => {
       const updatedRequest = await leaveModel.updateRequestStatus({
         id,
         status: nextStatus,
-        hrApproverId: req.user.role === 'admin' ? req.user.id : request.hrApproverId,
-        hrComment: req.user.role === 'admin' ? normalizedComment || null : request.hrComment,
-        ceoApproverId: req.user.role === 'ceo' ? req.user.id : request.ceoApproverId,
-        ceoComment: req.user.role === 'ceo' ? normalizedComment || null : request.ceoComment
+        hrApproverId: req.user.id,
+        hrComment: normalizedComment || null
       });
 
       if (nextStatus === 'approved') {
@@ -794,64 +930,17 @@ const decideRequest = async (req, res, next) => {
       return res.json({ request: updatedRequest });
     }
 
-    if (req.user.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(req.user.id)) {
-      if (request.status === 'approved' && decision === 'reject') {
-        await leaveModel.revertApprovedDaysToBalance({
-          userId: request.userId,
-          leaveTypeId: request.leaveTypeId,
-          daysRequested: request.daysRequested
-        });
-      }
-
-      if (request.status === 'rejected' && decision === 'approve') {
-        await leaveModel.applyApprovedDaysToBalance({
-          userId: request.userId,
-          leaveTypeId: request.leaveTypeId,
-          daysRequested: request.daysRequested
-        });
-      }
+    if (req.user.role === 'ceo' && request.status === 'pending_ceo') {
+      const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
 
       const updatedRequest = await leaveModel.updateRequestStatus({
         id,
-        status: decision === 'approve' ? 'approved' : 'rejected',
+        status: nextStatus,
         ceoApproverId: req.user.id,
         ceoComment: normalizedComment || null
       });
 
-      await logAction({
-        actorUserId: req.user.id,
-        actorRole: req.user.role,
-        action: 'LEAVE_CEO_DECISION_REVISED',
-        entityType: 'leave_request',
-        entityId: String(id),
-        description: `${req.user.fullName} revised the CEO decision for leave request ${id}.`,
-        metadata: { decision, comment: normalizedComment },
-        ipAddress: req.ip
-      });
-
-      sendLeaveDecisionNotification({
-        request: updatedRequest,
-        status: decision === 'approve' ? 'approved' : 'rejected',
-        reviewerName: req.user.fullName,
-        comment: normalizedComment
-      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
-
-      return res.json({ request: updatedRequest });
-    }
-
-    if (req.user.role === 'ceo') {
-      if (request.status !== 'pending_ceo') {
-        return res.status(400).json({ message: 'Only CEO-pending requests can be actioned by the CEO.' });
-      }
-
-      const updatedRequest = await leaveModel.updateRequestStatus({
-        id,
-        status: decision === 'approve' ? 'approved' : 'rejected',
-        ceoApproverId: req.user.id,
-        ceoComment: normalizedComment || null
-      });
-
-      if (decision === 'approve') {
+      if (nextStatus === 'approved') {
         await leaveModel.applyApprovedDaysToBalance({
           userId: request.userId,
           leaveTypeId: request.leaveTypeId,
@@ -865,14 +954,52 @@ const decideRequest = async (req, res, next) => {
         action: decision === 'approve' ? 'LEAVE_CEO_APPROVE' : 'LEAVE_CEO_REJECT',
         entityType: 'leave_request',
         entityId: String(id),
-        description: `${req.user.fullName} ${decision}d leave request ${id}.`,
-        metadata: { comment: normalizedComment },
+        description: `${req.user.fullName} ${decision}d leave request ${id} as CEO.`,
+        metadata: { comment: normalizedComment, nextStatus },
         ipAddress: req.ip
       });
 
       sendLeaveDecisionNotification({
         request: updatedRequest,
-        status: decision === 'approve' ? 'approved' : 'rejected',
+        status: nextStatus,
+        reviewerName: req.user.fullName,
+        comment: normalizedComment
+      }).catch((error) => console.error('Unable to send leave decision email.', error.message));
+
+      return res.json({ request: updatedRequest });
+    }
+
+    if (req.user.role === 'ceo' && request.status === 'approved' && String(request.ceoApproverId) === String(req.user.id)) {
+      const nextStatus = decision === 'approve' ? 'approved' : 'rejected';
+
+      const updatedRequest = await leaveModel.updateRequestStatus({
+        id,
+        status: nextStatus,
+        ceoComment: normalizedComment || null
+      });
+
+      if (nextStatus === 'rejected') {
+        await leaveModel.revertApprovedDaysToBalance({
+          userId: request.userId,
+          leaveTypeId: request.leaveTypeId,
+          daysRequested: request.daysRequested
+        });
+      }
+
+      await logAction({
+        actorUserId: req.user.id,
+        actorRole: req.user.role,
+        action: decision === 'approve' ? 'LEAVE_CEO_DECISION_REVISED' : 'LEAVE_CEO_DECISION_REVISED',
+        entityType: 'leave_request',
+        entityId: String(id),
+        description: `${req.user.fullName} revised the CEO decision for leave request ${id}.`,
+        metadata: { decision, comment: normalizedComment, nextStatus },
+        ipAddress: req.ip
+      });
+
+      sendLeaveDecisionNotification({
+        request: updatedRequest,
+        status: nextStatus,
         reviewerName: req.user.fullName,
         comment: normalizedComment
       }).catch((error) => console.error('Unable to send leave decision email.', error.message));

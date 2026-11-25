@@ -22,6 +22,7 @@ const {
   addEmployeeRouting,
   removeEmployeeRouting,
   getPendingTravelRequestCount,
+  getUnsettledTravelRequestCount,
   markTravelRequestAsViewed,
   updateTravelRequestSettled
 } = require('../controllers/travelController');
@@ -39,7 +40,7 @@ router.get('/requests', (req, res, next) => {
   listTravelRequests(req, res, next);
 });
 router.get('/requests/:id', getTravelRequest);
-router.post('/requests', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), upload.single('supportingDocument'), createTravelRequest);
+router.post('/requests', authorize('employee', 'supervisor', 'admin', 'ceo', 'finance', 'administrator_and_membership_officer'), upload.single('supportingDocument'), createTravelRequest);
 router.put('/requests/:id', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), updateTravelRequest);
 router.patch('/requests/:id/cancel', authorize('employee', 'supervisor', 'admin', 'finance', 'administrator_and_membership_officer'), cancelTravelRequest);
 router.patch('/requests/:id/decision', authorize('supervisor', 'admin', 'ceo', 'finance', 'administrator_and_membership_officer'), decideTravelRequest);
@@ -69,6 +70,9 @@ router.delete('/employee-routing/:id', authorize('admin'), removeEmployeeRouting
 
 // Pending count route
 router.get('/pending-count', getPendingTravelRequestCount);
+
+// Unsettled count route
+router.get('/unsettled-count', getUnsettledTravelRequestCount);
 
 // Mark travel request as viewed
 router.post('/requests/:id/viewed', markTravelRequestAsViewed);

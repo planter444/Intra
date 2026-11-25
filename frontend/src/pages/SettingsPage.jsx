@@ -346,6 +346,16 @@ export default function SettingsPage() {
     }));
   };
 
+  const setKpi = (key, value) => {
+    setDraft((current) => ({
+      ...current,
+      kpi: {
+        ...(current.kpi || {}),
+        [key]: value
+      }
+    }));
+  };
+
   const handleUploadPerPageBackground = async (variant, pageKey, file, device = 'desktop') => {
     if (!file) return;
     try {
@@ -1552,7 +1562,15 @@ export default function SettingsPage() {
                 ['navigationDashboard', 'Dashboard Label', 'labels', false],
                 ['navigationEmployees', 'Employees Label', 'labels', false],
                 ['navigationLeaves', 'Leaves Label', 'labels', false],
+                ['navigationLeaveStatus', 'Leave Status Label', 'labels', false],
+                ['navigationReport', 'Report Label', 'labels', false],
                 ['navigationDocuments', 'Documents Label', 'labels', false],
+                ['navigationTravel', 'Travel Label', 'labels', false],
+                ['navigationTimesheets', 'Timesheets Label', 'labels', false],
+                ['navigationPayslips', 'Payslips Label', 'labels', false],
+                ['navigationKpiMatrix', 'Appraisal Management Label', 'labels', false],
+                ['navigationKpiSelf', 'My Appraisal Label', 'labels', false],
+                ['navigationPerformance', 'Performance Label', 'labels', false],
                 ['navigationSettings', 'Settings Label', 'labels', false],
                 ['navigationAudit', 'Audit Label', 'labels', false]
               ].map(([key, label, source, colorPicker]) => (
@@ -1897,13 +1915,49 @@ export default function SettingsPage() {
         <div className="space-y-6">
           {isItOfficer && (
             <>
-              <SectionCard title="KPI Data Management" subtitle="IT Officer Only - Seed random KPI data for all employees.">
+              <SectionCard title="Appraisal Setup Mode" subtitle="IT Officer Only - Choose between Setup One (existing) or Setup Two (template-based).">
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-500">Select the appraisal setup mode to use across the system.</p>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="setupMode"
+                        value="one"
+                        checked={draft.kpi?.setupMode === 'one' || !draft.kpi?.setupMode}
+                        onChange={() => setKpi('setupMode', 'one')}
+                        className="h-4 w-4 text-emerald-600"
+                      />
+                      <div>
+                        <div className="font-medium text-slate-900">Appraisal Management 1</div>
+                        <div className="text-xs text-slate-500">Existing KPI-based appraisal system</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="setupMode"
+                        value="two"
+                        checked={draft.kpi?.setupMode === 'two'}
+                        onChange={() => setKpi('setupMode', 'two')}
+                        className="h-4 w-4 text-emerald-600"
+                      />
+                      <div>
+                        <div className="font-medium text-slate-900">Appraisal Management 2</div>
+                        <div className="text-xs text-slate-500">Template-based appraisal with document upload</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Appraisal Data Management" subtitle="IT Officer Only - Seed random appraisal data for all employees.">
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
                     className="inline-flex items-center gap-2 rounded-2xl bg-brand-gradient px-5 py-3 text-sm font-semibold text-white hover:opacity-90"
                     onClick={async () => {
-                      if (confirm('This will seed KPI data for all employees with random core roles and indicators. This action cannot be undone. Continue?')) {
+                      if (confirm('This will seed appraisal data for all employees with random core roles and indicators. This action cannot be undone. Continue?')) {
                         try {
                           const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/settings/seed-kpi`, {
                             method: 'POST',
@@ -1917,20 +1971,20 @@ export default function SettingsPage() {
                             window.location.reload();
                           }
                         } catch (error) {
-                          alert('Failed to seed KPI data');
+                          alert('Failed to seed appraisal data');
                         }
                       }
                     }}
                   >
-                    <Sparkles size={16} /> Seed KPI Data
+                    <Sparkles size={16} /> Seed Appraisal Data
                   </button>
-                  <p className="text-sm text-slate-500">This will generate ~5 core roles and ~5 KPI indicators with random scores (60-100) for each employee.</p>
+                  <p className="text-sm text-slate-500">This will generate ~5 core roles and ~5 appraisal indicators with random scores (60-100) for each employee.</p>
                 </div>
               </SectionCard>
 
-              <SectionCard title="KPI Editor Permissions" subtitle="IT Officer Only - Manage who can edit KPIs.">
+              <SectionCard title="Appraisal Editor Permissions" subtitle="IT Officer Only - Manage who can edit appraisals.">
                 <div className="space-y-4">
-                  <p className="text-sm text-slate-500">Select employees who should have permission to edit KPIs (in addition to admin, CEO, and finance roles).</p>
+                  <p className="text-sm text-slate-500">Select employees who should have permission to edit appraisals (in addition to admin, CEO, and finance roles).</p>
                   <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
                     {kpiEmployees?.map((employee) => (
                       <label key={employee.id} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50">
@@ -2159,7 +2213,7 @@ export default function SettingsPage() {
                   <h3 className="text-base font-semibold text-slate-900">KPIs</h3>
                   <p className="mt-1 text-sm text-slate-500">Set the KPI description and the employee's current score for each item, then add more KPI rows when needed.</p>
                   <div className="mt-4 space-y-4">
-                    {selectedKpiEntry.indicators.map((indicator, index) => (
+                    {Array.isArray(selectedKpiEntry.indicators) ? selectedKpiEntry.indicators.map((indicator, index) => (
                       <div key={`indicator-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr),140px,auto]">
                           <div>
@@ -2171,11 +2225,11 @@ export default function SettingsPage() {
                             <input type="number" min="0" max="100" value={indicator.score ?? ''} onChange={(event) => updateSelectedKpiIndicator(index, 'score', event.target.value)} placeholder="0-100" />
                           </div>
                           <div className="flex items-end">
-                            {selectedKpiEntry.indicators.length > 5 ? <button type="button" onClick={() => removeSelectedKpiIndicator(index)} className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">Remove</button> : null}
+                            {Array.isArray(selectedKpiEntry.indicators) && selectedKpiEntry.indicators.length > 5 ? <button type="button" onClick={() => removeSelectedKpiIndicator(index)} className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700">Remove</button> : null}
                           </div>
                         </div>
                       </div>
-                    ))}
+                    )) : null}
                   </div>
                   <div className="mt-4">
                     <button type="button" onClick={addSelectedKpiIndicator} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Add KPI</button>

@@ -59,37 +59,65 @@ const generateReferenceNumber = async () => {
   const year = new Date().getFullYear();
   const result = await query(
     `
-      SELECT COUNT(*) as count
+      SELECT reference_number
       FROM travel_requests
-      WHERE EXTRACT(YEAR FROM created_at) = $1
+      WHERE reference_number LIKE $1
+      ORDER BY reference_number DESC
+      LIMIT 1
     `,
-    [year]
+    [`KEREA-TRV-${year}-%`]
   );
   
-  const count = (result.rows[0]?.count || 0) + 1;
-  const sequence = String(count).padStart(4, '0');
-  return `KEREA-TRV-${year}-${sequence}`;
+  let sequence = 1;
+  if (result.rows.length > 0) {
+    const lastRef = result.rows[0].reference_number;
+    const lastSequence = parseInt(lastRef.split('-').pop(), 10);
+    sequence = lastSequence + 1;
+  }
+  
+  const sequenceStr = String(sequence).padStart(4, '0');
+  return `KEREA-TRV-${year}-${sequenceStr}`;
 };
 
 const createTravelRequest = async ({ userId, travelType, startDate, endDate, origin, destination, reason, estimatedCost, currency, supportingDocumentId, designation, travelCategory, travelTypeDetail, projectProgramme, dsaRate, dsaCurrency, dsaAmount, dsaProvided, accommodationRate, accommodationCurrency, accommodationAmount, accommodationProvided, transportationCost, fullDayEvent }) => {
   const referenceNumber = await generateReferenceNumber();
 
-  // Check if the first approver is the CEO
+  // Check if the user is CEO and use CEO approval routing setting
   let initialStatus = 'pending';
   try {
-    const approvers = await getApproverForEmployee(userId);
-    if (approvers && approvers.length > 0) {
-      const firstApproverId = approvers[0];
-      const approverResult = await query(
-        `SELECT role FROM users WHERE id = $1`,
-        [firstApproverId]
-      );
-      if (approverResult.rows.length > 0 && approverResult.rows[0].role === 'ceo') {
+    const userResult = await query(
+      `SELECT role FROM users WHERE id = $1`,
+      [userId]
+    );
+    
+    if (userResult.rows.length > 0 && userResult.rows[0].role === 'ceo') {
+      // CEO is the applicant - check approval routing setting
+      const notificationSettings = await getTravelNotificationSettings();
+      const ceoApprovalRouting = notificationSettings.ceoApprovalRouting || 'chairman';
+      
+      if (ceoApprovalRouting === 'self') {
+        // CEO approves herself - set to pending_ceo
         initialStatus = 'pending_ceo';
+      } else {
+        // Chairman approves CEO - set to pending (will be routed to chairman)
+        initialStatus = 'pending';
+      }
+    } else {
+      // Non-CEO applicant - check if first approver is CEO
+      const approvers = await getApproverForEmployee(userId);
+      if (approvers && approvers.length > 0) {
+        const firstApproverId = approvers[0];
+        const approverResult = await query(
+          `SELECT role FROM users WHERE id = $1`,
+          [firstApproverId]
+        );
+        if (approverResult.rows.length > 0 && approverResult.rows[0].role === 'ceo') {
+          initialStatus = 'pending_ceo';
+        }
       }
     }
   } catch (error) {
-    console.warn('Failed to check first approver, defaulting to pending:', error.message);
+    console.warn('Failed to check approver, defaulting to pending:', error.message);
   }
 
   // Helper to normalize numeric values
@@ -135,7 +163,7 @@ const createTravelRequest = async ({ userId, travelType, startDate, endDate, ori
           status,
           settled
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, false)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
         RETURNING id
       `,
       [
@@ -164,7 +192,8 @@ const createTravelRequest = async ({ userId, travelType, startDate, endDate, ori
         toNullableNumber(transportationCost),
         fullDayEvent || false,
         referenceNumber,
-        initialStatus
+        initialStatus,
+        false
       ]
     );
   } catch (error) {
@@ -330,8 +359,8 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
   const notificationSettings = await getTravelNotificationSettings();
   const canViewAll = notificationSettings && notificationSettings.viewAllTravelRequestsIds && notificationSettings.viewAllTravelRequestsIds.includes(viewerId);
 
-  // Admin and membership officer always have view-all access
-  const hasAutomaticViewAll = role === 'admin' || role === 'administrator_and_membership_officer' || positionTitle === 'Administration';
+  // Admin, finance, membership officer, and chairman always have view-all access
+  const hasAutomaticViewAll = role === 'admin' || role === 'finance' || role === 'administrator_and_membership_officer' || positionTitle === 'Administration' || role === 'chairman' || role === 'chairperson' || role === 'chair';
 
   console.log('listTravelRequests - viewerId:', viewerId, 'role:', role, 'positionTitle:', positionTitle, 'canViewAll:', canViewAll, 'hasAutomaticViewAll:', hasAutomaticViewAll);
 
@@ -375,8 +404,9 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
   } else if (role === 'ceo') {
     // CEO sees requests that have reached their stage (pending_ceo or beyond)
     // AND pending requests where CEO is the designated approver in routing
+    // AND her own requests regardless of status
     if (!status) {
-      // If no status filter specified, show requests at CEO stage OR pending requests where CEO is approver
+      // If no status filter specified, show requests at CEO stage OR pending requests where CEO is approver OR her own requests
       try {
         const ceoRouting = await query(
           `
@@ -387,12 +417,13 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
           [viewerId]
         );
 
-        // CEO only sees requests that have reached their stage (pending_ceo or beyond)
-        // CEO does NOT see pending requests (those are still with supervisors)
-        clauses.push(`tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed')`);
+        // CEO sees her own requests OR requests at CEO stage
+        clauses.push(`(tr.user_id = $1 OR tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed'))`);
+        params.push(viewerId);
       } catch (error) {
-        // Fallback: only show requests at CEO stage if routing query fails
-        clauses.push(`tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed')`);
+        // Fallback: show CEO's own requests and requests at CEO stage
+        clauses.push(`(tr.user_id = $1 OR tr.status IN ('pending_ceo', 'approved', 'rejected', 'cancelled', 'in_progress', 'completed'))`);
+        params.push(viewerId);
       }
     }
     // If status is specified, use that filter (admin/ceo can filter by any status)
@@ -401,11 +432,9 @@ const listTravelRequests = async ({ viewerId, role, userId, status, positionTitl
     params.push(viewerId);
     clauses.push(`tr.user_id = $${params.length}`);
   } else if (role === 'finance' || role === 'admin' || positionTitle === 'Administration') {
-    // Finance and admin should see CEO-approved requests AND their own requests (unless they have view-all access)
-    if (!canViewAll && !hasAutomaticViewAll) {
-      clauses.push(`(tr.status IN ('approved', 'in_progress', 'completed') OR tr.user_id = $${params.length + 1})`);
-      params.push(viewerId);
-    }
+    // Finance and admin should see all requests (no user filter)
+    // No status filter - they see pending, approved, etc.
+    // No changes needed - they already have automatic view-all access via hasAutomaticViewAll
   }
   // For oversight roles (admin, finance, it_officer), membership officer, administrator, and users with view-all access, no user filter - they see all
 
@@ -796,7 +825,8 @@ const getTravelNotificationSettings = async () => {
       id: null,
       recipientIds: [],
       viewAllTravelRequestsIds: [],
-      settledEditorIds: []
+      settledEditorIds: [],
+      ceoApprovalRouting: 'chairman'
     };
   }
 
@@ -805,13 +835,14 @@ const getTravelNotificationSettings = async () => {
     id: row.id,
     recipientIds: row.recipient_ids || [],
     viewAllTravelRequestsIds: row.view_all_travel_requests_ids || [],
-    settledEditorIds: row.settled_editor_ids || []
+    settledEditorIds: row.settled_editor_ids || [],
+    ceoApprovalRouting: row.ceo_approval_routing || 'chairman'
   };
   console.log('getTravelNotificationSettings - Settings loaded:', settings);
   return settings;
 };
 
-const updateTravelNotificationSettings = async ({ recipientIds, viewAllTravelRequestsIds, settledEditorIds, updatedBy }) => {
+const updateTravelNotificationSettings = async ({ recipientIds, viewAllTravelRequestsIds, settledEditorIds, ceoApprovalRouting, updatedBy }) => {
   const existing = await query(`SELECT id FROM travel_notification_settings LIMIT 1`);
 
   if (existing.rows.length > 0) {
@@ -822,11 +853,12 @@ const updateTravelNotificationSettings = async ({ recipientIds, viewAllTravelReq
           recipient_ids = $2,
           view_all_travel_requests_ids = $3,
           settled_editor_ids = $4,
-          updated_by = $5,
+          ceo_approval_routing = $5,
+          updated_by = $6,
           updated_at = NOW()
         WHERE id = $1
       `,
-      [existing.rows[0].id, recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], updatedBy]
+      [existing.rows[0].id, recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], ceoApprovalRouting || 'chairman', updatedBy]
     );
   } else {
     await query(
@@ -835,11 +867,12 @@ const updateTravelNotificationSettings = async ({ recipientIds, viewAllTravelReq
           recipient_ids,
           view_all_travel_requests_ids,
           settled_editor_ids,
+          ceo_approval_routing,
           updated_by
         )
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
       `,
-      [recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], updatedBy]
+      [recipientIds || [], viewAllTravelRequestsIds || [], settledEditorIds || [], ceoApprovalRouting || 'chairman', updatedBy]
     );
   }
 
@@ -1251,17 +1284,8 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
         WHERE status = 'pending_ceo'
       `
     );
-  } else if (userRole === 'admin' || userRole === 'finance' || isNotificationRecipient) {
-    // Admin, finance, and notification recipients can see all pending requests
-    result = await query(
-      `
-        SELECT COUNT(*) as count
-        FROM travel_requests
-        WHERE status = 'pending'
-      `
-    );
-  } else if (userRole === 'supervisor') {
-    // Supervisors can see pending requests from employees they are designated approvers for
+  } else if (userRole === 'admin' || userRole === 'supervisor') {
+    // Admin (IT Officer) and supervisors can only see pending requests from employees they are designated approvers for
     try {
       result = await query(
         `
@@ -1273,22 +1297,54 @@ const getPendingTravelRequestCountForUser = async (userId, userRole) => {
         [userId]
       );
     } catch (error) {
-      console.warn('Failed to get supervisor pending count:', error.message);
+      console.warn('Failed to get approver pending count:', error.message);
       // Fallback: return 0 if query fails
       result = { rows: [{ count: 0 }] };
     }
-  } else {
-    // Regular employees can only see requests where they are one of the designated approvers
+  } else if (userRole === 'finance') {
+    // Finance can see all pending requests
     result = await query(
       `
         SELECT COUNT(*) as count
-        FROM travel_requests tr
-        INNER JOIN travel_employee_routing ter ON ter.employee_id = tr.user_id
-        WHERE tr.status = 'pending' AND ter.approver_id = $1
-      `,
-      [userId]
+        FROM travel_requests
+        WHERE status = 'pending'
+      `
     );
+  } else if (isNotificationRecipient) {
+    // Notification recipients count approved requests (not pending)
+    result = await query(
+      `
+        SELECT COUNT(*) as count
+        FROM travel_requests
+        WHERE status = 'approved'
+      `
+    );
+  } else {
+    // Regular employees should not see any pending count
+    result = { rows: [{ count: 0 }] };
   }
+
+  return parseInt(result.rows[0].count, 10);
+};
+
+const getUnsettledTravelRequestCountForUser = async (userId, userRole) => {
+  let result;
+
+  // Finance, admin, administrator_and_membership_officer should see unsettled counts
+  const canSettleRoles = ['admin', 'finance', 'administrator_and_membership_officer'];
+  
+  if (!canSettleRoles.includes(userRole)) {
+    return 0;
+  }
+
+  // Count approved requests that are not yet settled
+  result = await query(
+    `
+      SELECT COUNT(*) as count
+      FROM travel_requests
+      WHERE status = 'approved' AND settled = false
+    `
+  );
 
   return parseInt(result.rows[0].count, 10);
 };
@@ -1359,12 +1415,14 @@ const getPendingTravelRequestCountForUserExcludingViewed = async (userId, userRo
         [userId]
       );
     } else {
-      // Admin, membership officer, administrator, and users with view-all access can see all pending requests
+      // Admin (IT Officer) can only see pending requests from employees they are designated approvers for
       result = await query(
         `
           SELECT COUNT(*) as count
           FROM travel_requests tr
+          INNER JOIN travel_employee_routing ter ON ter.employee_id = tr.user_id
           WHERE tr.status = 'pending'
+          AND ter.approver_id = $1
           AND tr.id NOT IN (
             SELECT travel_request_id FROM travel_request_views WHERE user_id = $1
           )
@@ -1442,6 +1500,8 @@ module.exports = {
   getTravelRoutingSettings,
   updateTravelRoutingSettings,
   getAllEmployeeRouting,
+  getPendingTravelRequestCountForUser,
+  getUnsettledTravelRequestCountForUser,
   getApproverForEmployee,
   addEmployeeRouting,
   removeEmployeeRouting,

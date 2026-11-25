@@ -68,7 +68,12 @@ export default function KPIMatrixPage() {
   );
 
   const selectedEmployee = rows.find((emp) => String(emp.id) === String(selectedEmployeeId));
-  const employeeKpiData = selectedEmployee ? (settings?.kpi?.records?.[String(selectedEmployee.id)] || settings?.kpi?.matrix?.[String(selectedEmployee.id)] || {}) : {};
+  const employeeKpiData = selectedEmployee ? {
+    ...(settings?.kpi?.records?.[String(selectedEmployee.id)] || settings?.kpi?.matrix?.[String(selectedEmployee.id)] || {}),
+    indicators: Array.isArray(settings?.kpi?.records?.[String(selectedEmployee.id)]?.indicators || settings?.kpi?.matrix?.[String(selectedEmployee.id)]?.indicators) 
+      ? settings?.kpi?.records?.[String(selectedEmployee.id)]?.indicators || settings?.kpi?.matrix?.[String(selectedEmployee.id)]?.indicators 
+      : []
+  } : { indicators: [] };
 
   const handleSelectEmployee = (employeeId) => {
     setSelectedEmployeeId(employeeId);
@@ -76,27 +81,27 @@ export default function KPIMatrixPage() {
     const emp = rows.find((e) => String(e.id) === String(employeeId));
     if (emp) {
       const kpiData = settings?.kpi?.records?.[String(employeeId)] || settings?.kpi?.matrix?.[String(employeeId)] || {};
-      
+
       // Migrate old string-based coreRoles to object format
-      const migratedCoreRoles = (kpiData.coreRoles || []).map(role => {
+      const migratedCoreRoles = Array.isArray(kpiData?.coreRoles) ? kpiData.coreRoles.map(role => {
         if (typeof role === 'string') {
           return { role, comment: '' };
         }
         return role;
-      });
-      
+      }) : [];
+
       // Migrate old indicators without comment to include comment field
-      const migratedIndicators = (kpiData.indicators || []).map(indicator => ({
+      const migratedIndicators = Array.isArray(kpiData?.indicators) ? kpiData.indicators.map(indicator => ({
         ...indicator,
         comment: indicator.comment || ''
-      }));
-      
+      })) : [];
+
       setEditForm({
-        description: kpiData.description || '',
+        description: kpiData?.description || '',
         coreRoles: migratedCoreRoles,
         indicators: migratedIndicators,
-        assessmentFrequency: kpiData.assessmentFrequency || 'monthly',
-        locked: kpiData.locked || false
+        assessmentFrequency: kpiData?.assessmentFrequency || 'monthly',
+        locked: kpiData?.locked || false
       });
     }
   };
@@ -202,8 +207,8 @@ export default function KPIMatrixPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={isEmployee ? "My KPI Profile" : "KPI Management"}
-        subtitle={isEmployee ? "View your KPI configuration and performance scores." : "Select an employee to view and manage their KPI configuration and scores."}
+        title={isEmployee ? "My Appraisal Profile" : "Appraisal Management"}
+        subtitle={isEmployee ? "View your appraisal configuration and performance scores." : "Select an employee to view and manage their appraisal configuration and scores."}
         actions={canManageKpi ? [
           <Link
             key="settings"
@@ -211,7 +216,7 @@ export default function KPIMatrixPage() {
             state={{ settingsPage: 'kpi' }}
             className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
-            <Settings size={16} /> KPI Settings
+            <Settings size={16} /> Appraisal Settings
           </Link>
         ] : isEmployee ? [
           <Link
@@ -225,12 +230,12 @@ export default function KPIMatrixPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <StatCard title="Employees" value={rows.length} helper="Active employees available for KPI review" accent="from-emerald-700 to-green-500" />
-        <StatCard title="Configured profiles" value={employeesWithScores} helper="Employees with at least one saved KPI score" accent="from-sky-700 to-cyan-500" />
-        <StatCard title="KPI editing" value="Inline" helper="Edit KPIs directly from this page" accent="from-violet-700 to-fuchsia-500" />
+        <StatCard title="Employees" value={rows.length} helper="Active employees available for appraisal review" accent="from-emerald-700 to-green-500" />
+        <StatCard title="Configured profiles" value={employeesWithScores} helper="Employees with at least one saved appraisal score" accent="from-sky-700 to-cyan-500" />
+        <StatCard title="Appraisal editing" value="Inline" helper="Edit appraisals directly from this page" accent="from-violet-700 to-fuchsia-500" />
       </div>
 
-      <SectionCard title={isEmployee ? "Your Profile" : "Select Employee"} subtitle={isEmployee ? "Your KPI details and performance information." : "Choose an employee to view and manage their KPI details."} style={{ ...cardStyle, ...animationStyle }}>
+      <SectionCard title={isEmployee ? "Your Profile" : "Select Employee"} subtitle={isEmployee ? "Your appraisal details and performance information." : "Choose an employee to view and manage their appraisal details."} style={{ ...cardStyle, ...animationStyle }}>
         {!isEmployee && (
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium text-slate-700">Select Employee</label>

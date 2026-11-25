@@ -1,17 +1,14 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X, DollarSign, Plane, Clock } from 'lucide-react';
+import { BarChart2, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Table, User, Users, X, DollarSign, Plane, Clock, Target } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { fetchDocuments, getDocumentUrl } from '../services/documentService';
 import { fetchLeaveRequests } from '../services/leaveService';
-import { getPendingTravelRequestCount } from '../services/travelService';
+import { getPendingTravelRequestCount, getUnsettledTravelRequestCount } from '../services/travelService';
 import { getPendingReviewCount } from '../utils/leave';
 import { getRedesignedTheme, isRedesignedActive, resolvePagePresentationKey, withOpacity } from '../hooks/usePagePresentation';
 import { getPendingTimesheetCount } from '../services/timesheetService';
-
-const SEEN_DOCUMENT_IDS_KEY = 'kerea_hrms_seen_document_ids';
-const getSeenDocumentIdsStorageKey = (userId) => `${SEEN_DOCUMENT_IDS_KEY}_${userId}`;
 
 const routeMap = {
   dashboard: '/dashboard',
@@ -31,6 +28,25 @@ const routeMap = {
   timesheets: '/timesheets'
 };
 
+// Navigation priority order as requested by user
+const navigationPriority = {
+  dashboard: 1,
+  employees: 2,
+  profile: 3,
+  leaves: 4,
+  leave_status: 5,
+  report: 6,
+  documents: 7,
+  travel: 8,
+  timesheets: 9,
+  payslips: 10,
+  kpi: 11, // This will be renamed to "Appraisal Management" in UI
+  kpi_self: 12, // This will be renamed to "My Appraisal" in UI
+  performance: 13,
+  settings: 14,
+  audit: 15
+};
+
 const labelKeyMap = {
   dashboard: 'navigationDashboard',
   employees: 'navigationEmployees',
@@ -41,7 +57,9 @@ const labelKeyMap = {
   kpi: 'navigationKpiMatrix',
   kpi_self: 'navigationKpiSelf',
   performance: 'navigationPerformance',
-  report: 'navigationReport'
+  report: 'navigationReport',
+  timesheets: 'navigationTimesheets',
+  travel: 'navigationTravel'
 };
 
 const iconMap = {
@@ -53,7 +71,7 @@ const iconMap = {
   settings: Settings,
   audit: ShieldCheck,
   kpi: Table,
-  kpi_self: User,
+  kpi_self: Target,
   performance: BarChart2,
   leave_status: ClipboardList,
   payslips: DollarSign,
@@ -63,12 +81,15 @@ const iconMap = {
 };
 
 const defaultNavigationByRole = {
-  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'payslips', 'travel', 'timesheets', 'kpi_self', 'kpi', 'performance'],
-  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'documents', 'payslips', 'travel', 'timesheets', 'kpi_self', 'kpi', 'performance'],
-  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'travel', 'timesheets', 'kpi_self', 'kpi', 'performance'],
-  admin: ['dashboard', 'employees', 'profile', 'leaves', 'report', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'audit', 'payslips', 'travel', 'timesheets', 'kpi_self'],
-  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'report', 'leave_status', 'documents', 'settings', 'kpi', 'performance', 'payslips', 'travel', 'timesheets', 'kpi_self'],
-  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'kpi', 'performance', 'settings', 'payslips', 'travel', 'timesheets', 'kpi_self']
+  employee: ['dashboard', 'profile', 'leaves', 'leave_status', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance'],
+  supervisor: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance', 'settings'],
+  hr: ['dashboard', 'employees', 'profile', 'leaves', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance', 'settings'],
+  admin: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi', 'kpi_self', 'performance', 'settings', 'audit'],
+  ceo: ['dashboard', 'employees', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi', 'kpi_self', 'performance', 'settings', 'audit'],
+  finance: ['dashboard', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi', 'kpi_self', 'performance', 'settings'],
+  chairman: ['dashboard', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance', 'settings', 'audit'],
+  chairperson: ['dashboard', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance', 'settings', 'audit'],
+  chair: ['dashboard', 'profile', 'leaves', 'leave_status', 'report', 'documents', 'travel', 'timesheets', 'payslips', 'kpi_self', 'performance', 'settings', 'audit']
 };
 
 export default function AppLayout({ children }) {
@@ -76,8 +97,8 @@ export default function AppLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [pendingTravelCount, setPendingTravelCount] = useState(0);
+  const [unsettledTravelCount, setUnsettledTravelCount] = useState(0);
   const [pendingTimesheetCount, setPendingTimesheetCount] = useState(0);
-  const [documentNotificationCount, setDocumentNotificationCount] = useState(0);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const location = useLocation();
@@ -86,7 +107,7 @@ export default function AppLayout({ children }) {
   const roleDisplay = user?.role === 'admin' ? 'IT Officer'
     : user?.role === 'finance' ? 'Finance Officer'
     : (user?.role === 'hr' || user?.role === 'ceo') ? 'CEO'
-    : user?.role?.toUpperCase();
+    : user?.roleTitle || user?.role?.toUpperCase();
   const mobileMenuOpenStyle = {
     backgroundColor: settings?.branding?.mobileMenuOpenBackgroundColor || '#ffffff',
     color: settings?.branding?.mobileMenuOpenTextColor || '#475569',
@@ -102,8 +123,23 @@ export default function AppLayout({ children }) {
     const fallbackItems = defaultNavigationByRole[user?.role] || ['dashboard'];
     const configuredItems = settings?.navigation?.[user?.role] || [];
     const restrictedItems = user?.role === 'admin' ? [] : ['audit'];
-    const navItems = [...new Set([...fallbackItems, ...configuredItems])].filter((key) => !restrictedItems.includes(key));
-    return (navItems || []).map((key) => ({
+    const appraisalEditorRoles = settings?.kpi?.appraisalEditorRoles || ['ceo', 'admin', 'finance'];
+    const canEditAppraisal = appraisalEditorRoles.includes(user?.role);
+
+    const navItems = [...new Set([...fallbackItems, ...configuredItems])].filter((key) => {
+      // Hide audit logs for non-admin roles
+      if (restrictedItems.includes(key)) return false;
+      // Hide Appraisal Management (kpi) unless user can edit appraisals
+      if (key === 'kpi' && !canEditAppraisal) return false;
+      return true;
+    });
+
+    const sortedNavItems = navItems.sort((a, b) => {
+      const priorityA = navigationPriority[a] || 999;
+      const priorityB = navigationPriority[b] || 999;
+      return priorityA - priorityB;
+    });
+    return (sortedNavItems || []).map((key) => ({
       key,
       label: user?.role === 'supervisor' && key === 'employees'
         ? 'My Team'
@@ -113,7 +149,7 @@ export default function AppLayout({ children }) {
   }, [settings, user]);
 
   useEffect(() => {
-    if (!['supervisor', 'admin', 'ceo'].includes(user?.role)) {
+    if (!['supervisor', 'admin'].includes(user?.role)) {
       setPendingReviewCount(0);
       return;
     }
@@ -142,36 +178,66 @@ export default function AppLayout({ children }) {
   useEffect(() => {
     if (!user) {
       setPendingTravelCount(0);
+      setUnsettledTravelCount(0);
       return;
     }
 
     const refreshPendingTravelCount = () => {
-      getPendingTravelRequestCount()
-        .then((count) => setPendingTravelCount(count))
+      // CEO counts pending_ceo, others count pending
+      if (user.role === 'ceo') {
+        getPendingTravelRequestCount()
+          .then((count) => setPendingTravelCount(count))
+          .catch((error) => {
+            if (error.response?.status !== 429) {
+              setPendingTravelCount(0);
+            }
+          });
+      } else {
+        setPendingTravelCount(0);
+      }
+    };
+
+    const refreshUnsettledTravelCount = () => {
+      // Finance, admin, administrator_and_membership_officer, and IT Officer see unsettled count
+      const canSettleRoles = ['admin', 'finance', 'administrator_and_membership_officer'];
+      if (!canSettleRoles.includes(user.role)) {
+        setUnsettledTravelCount(0);
+        return;
+      }
+      getUnsettledTravelRequestCount()
+        .then((count) => setUnsettledTravelCount(count))
         .catch((error) => {
           if (error.response?.status !== 429) {
-            setPendingTravelCount(0);
+            setUnsettledTravelCount(0);
           }
         });
     };
 
     refreshPendingTravelCount();
-    const intervalId = window.setInterval(refreshPendingTravelCount, 60000);
-    window.addEventListener('focus', refreshPendingTravelCount);
+    refreshUnsettledTravelCount();
+    const intervalId = window.setInterval(() => {
+      refreshPendingTravelCount();
+      refreshUnsettledTravelCount();
+    }, 60000);
+    window.addEventListener('focus', () => {
+      refreshPendingTravelCount();
+      refreshUnsettledTravelCount();
+    });
     return () => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', refreshPendingTravelCount);
+      window.removeEventListener('focus', refreshUnsettledTravelCount);
     };
   }, [user]);
 
   useEffect(() => {
-    if (!['supervisor', 'admin', 'ceo'].includes(user?.role)) {
+    if (!['supervisor'].includes(user?.role)) {
       setPendingTimesheetCount(0);
       return;
     }
 
     const refreshPendingTimesheetCount = () => {
-      getPendingTimesheetCount()
+      getPendingTimesheetCount(user.id, user.role)
         .then((count) => setPendingTimesheetCount(count))
         .catch((error) => {
           if (error.response?.status !== 429) {
@@ -188,35 +254,6 @@ export default function AppLayout({ children }) {
       window.removeEventListener('focus', refreshPendingTimesheetCount);
     };
   }, [user]);
-
-  useEffect(() => {
-    if (user?.role !== 'ceo') {
-      setDocumentNotificationCount(0);
-      return;
-    }
-
-    const refreshDocumentNotifications = () => {
-      fetchDocuments()
-        .then((documents) => {
-          const scopedSeenIds = JSON.parse(localStorage.getItem(getSeenDocumentIdsStorageKey(user?.id)) || 'null');
-          const legacySeenIds = JSON.parse(localStorage.getItem(SEEN_DOCUMENT_IDS_KEY) || '[]');
-          const seenDocumentIds = new Set((Array.isArray(scopedSeenIds) ? scopedSeenIds : legacySeenIds).map(String));
-          setDocumentNotificationCount(
-            (documents || []).filter((document) => document.folderType !== 'branding' && document.folderType !== 'profile')
-              .filter((document) => String(document.uploadedBy) !== String(user?.id) && !seenDocumentIds.has(String(document.id))).length
-          );
-        })
-        .catch((error) => {
-          if (error.response?.status !== 429) {
-            setDocumentNotificationCount(0);
-          }
-        });
-    };
-
-    refreshDocumentNotifications();
-    window.addEventListener('documents-seen-updated', refreshDocumentNotifications);
-    return () => window.removeEventListener('documents-seen-updated', refreshDocumentNotifications);
-  }, [user?.id, user?.role]);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 768px)');
@@ -428,12 +465,12 @@ export default function AppLayout({ children }) {
                       <span className="relative flex items-center gap-2">
                         {item.key === 'leaves' && pendingReviewCount > 0 ? (
                           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingReviewCount}</span>
-                        ) : item.key === 'travel' && pendingTravelCount > 0 ? (
-                          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingTravelCount}</span>
+                        ) : item.key === 'travel' && user.role === 'ceo' && pendingTravelCount > 0 ? (
+                          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingTravelCount}</span>
+                        ) : item.key === 'travel' && user.role !== 'ceo' && unsettledTravelCount > 0 ? (
+                          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">+{unsettledTravelCount}</span>
                         ) : item.key === 'timesheets' && pendingTimesheetCount > 0 ? (
                           <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{pendingTimesheetCount}</span>
-                        ) : item.key === 'documents' && documentNotificationCount > 0 ? (
-                          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">+{documentNotificationCount}</span>
                         ) : null}
                         {redesignedActive ? (
                           <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border backdrop-blur-sm ${isActive ? 'border-white/70 bg-white/80 text-emerald-900' : 'border-white/20 bg-white/15 text-white group-hover:border-white/40 group-hover:bg-white/20'}`}>

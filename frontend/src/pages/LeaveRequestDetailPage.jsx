@@ -22,6 +22,22 @@ import { countKenyaLeaveDays } from '../utils/leaveCalendar';
 import { formatDateRangeDisplay, formatDateTimeDisplay, formatStatusLabel, normalizeDateInput } from '../utils/formatters';
 import { getAvailableBalanceDays } from '../utils/leave';
 
+const formatStatusLabelForCEO = (status) => {
+  // For CEO viewing their own leave request, show "Pending Chairperson" instead of "Pending CEO"
+  if (status === 'pending_supervisor' || status === 'pending_hr' || status === 'pending_ceo') {
+    return 'Pending Chairperson';
+  }
+  return formatStatusLabel(status);
+};
+
+const formatStatusLabelForChairmanViewingCeo = (status) => {
+  // For Chairman viewing CEO's leave request, show "Pending Chairperson" instead of "Pending Supervisor"
+  if (status === 'pending_supervisor') {
+    return 'Pending Chairperson';
+  }
+  return formatStatusLabel(status);
+};
+
 const getStatusBadgeClassName = (status) => {
   if (status === 'approved') {
     return 'bg-emerald-100 text-emerald-700';
@@ -183,6 +199,18 @@ export default function LeaveRequestDetailPage() {
     );
   const canOperationalReview = request && !isRequestOwner && (user?.role === 'admin' || user?.role === 'ceo') && request.status === 'pending_hr';
   const canFinalCeoReview = request && !isRequestOwner && user?.role === 'ceo' && request.status === 'pending_ceo';
+
+  // For CEO viewing their own leave request, show Chairperson instead of CEO
+  const isCeoViewingOwnRequest = user?.role === 'ceo' && isRequestOwner;
+  const isChairmanViewingCeoRequest = request
+    && (user?.role === 'chairman' || user?.role === 'chairperson' || user?.role === 'chair' || user?.roleTitle?.toLowerCase().includes('chair'))
+    && (request.employeeName?.toLowerCase().includes('ceo') || request.employeePositionTitle?.toLowerCase().includes('ceo'));
+  const finalStageLabel = isCeoViewingOwnRequest || isChairmanViewingCeoRequest ? 'Chairperson' : 'CEO';
+
+  const canChairmanReview = request
+    && !isRequestOwner
+    && isChairmanViewingCeoRequest
+    && request.status === 'pending_supervisor';
   const canReviseSupervisorDecision = request
     && !isRequestOwner
     && user?.role !== 'ceo'
@@ -191,17 +219,7 @@ export default function LeaveRequestDetailPage() {
     && request.supervisorApproverRole !== 'ceo'
     && !request.ceoApproverId;
   const canReviseCeoDecision = request && !isRequestOwner && user?.role === 'ceo' && ['approved', 'rejected'].includes(request.status) && String(request.ceoApproverId) === String(user?.id);
-  const timeline = request?.timeline || {
-    submitted: { label: 'Applied', time: request?.createdAt, actorName: request?.employeeName },
-    supervisor: visibleSupervisorStage ? { label: 'Supervisor', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
-    ceo: {
-      label: 'CEO',
-      time: request?.ceoTime || request?.supervisorTime || null,
-      actorName: isCeoSupervisor ? (request?.ceoApproverName || request?.supervisorApproverName || request?.hrApproverName) : (request?.ceoApproverName || request?.hrApproverName),
-      comment: isCeoSupervisor ? (request?.ceoComment || request?.supervisorComment || request?.hrComment) : (request?.ceoComment || request?.hrComment),
-      decision: null
-    }
-  };
+
   const hasUnsavedChanges = useMemo(
     () => editing && (
       form.leaveTypeCode !== (request?.leaveTypeCode || '')
@@ -329,6 +347,18 @@ export default function LeaveRequestDetailPage() {
     return <EmptyState title="Leave request not found" description="The selected leave request could not be found or is no longer available." />;
   }
 
+  const timeline = request?.timeline || {
+    submitted: { label: 'Applied', time: request?.createdAt, actorName: request?.employeeName },
+    supervisor: visibleSupervisorStage ? { label: 'Supervisor', time: null, actorName: request?.supervisorApproverName, comment: request?.supervisorComment, decision: null } : null,
+    ceo: {
+      label: finalStageLabel,
+      time: request?.ceoTime || request?.supervisorTime || null,
+      actorName: isCeoSupervisor ? (request?.ceoApproverName || request?.supervisorApproverName || request?.hrApproverName) : (request?.ceoApproverName || request?.hrApproverName),
+      comment: isCeoSupervisor ? (request?.ceoComment || request?.supervisorComment || request?.hrComment) : (request?.ceoComment || request?.hrComment),
+      decision: null
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -336,7 +366,7 @@ export default function LeaveRequestDetailPage() {
         subtitle={`Request ID #${request.id}`}
         actions={[
           <span key="status" className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold ${getStatusBadgeClassName(request.status)}`}>
-            {formatStatusLabel(request.status)}
+            {isCeoViewingOwnRequest ? formatStatusLabelForCEO(request.status) : isChairmanViewingCeoRequest ? formatStatusLabelForChairmanViewingCeo(request.status) : formatStatusLabel(request.status)}
           </span>,
           <button key="back" type="button" onClick={() => navigate('/leaves')} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
             <span className="inline-flex items-center gap-2"><ArrowLeft size={16} />Back to leave dashboard</span>
@@ -453,7 +483,7 @@ export default function LeaveRequestDetailPage() {
         </SectionCard>
 
         <div className="space-y-6">
-          {(canSupervisorReview || canOperationalReview || canFinalCeoReview || canReviseSupervisorDecision || canReviseCeoDecision) ? (
+          {(canSupervisorReview || canOperationalReview || canFinalCeoReview || canChairmanReview || canReviseSupervisorDecision || canReviseCeoDecision) ? (
             <SectionCard title={canReviseSupervisorDecision || canReviseCeoDecision ? 'Update Decision' : 'Take Action'} subtitle={canReviseSupervisorDecision || canReviseCeoDecision ? 'Switch the recorded decision for this leave request.' : 'Approve or reject this request with an optional comment.'}>
               {canReviseSupervisorDecision || canReviseCeoDecision ? (
                 <button type="button" className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 ${request.status === 'rejected' ? 'bg-emerald-600' : 'bg-rose-600'}`} onClick={() => setDecisionModal({ open: true, decision: request.status === 'rejected' ? 'approve' : 'reject', comment: canReviseSupervisorDecision ? request.supervisorComment || '' : request.ceoComment || '' })}>
@@ -479,7 +509,7 @@ export default function LeaveRequestDetailPage() {
               {[timeline.submitted, timeline.supervisor, timeline.ceo].filter(Boolean).map((entry, index) => (
                 <div key={entry.label} className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3">
                   <div>
-                    <p className="font-medium text-slate-900">{entry.label}</p>
+                    <p className="font-medium text-slate-900">{(isCeoViewingOwnRequest || isChairmanViewingCeoRequest) && (entry.label === 'CEO' || entry.label === 'Chairman') ? 'Chairperson' : entry.label}</p>
                     <p className="mt-1 text-sm text-slate-500">{formatDateTimeDisplay(entry.time)}</p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${index === 0 ? 'bg-blue-100 text-blue-700' : getDecisionBadgeClassName(entry.decision)}`}>
@@ -517,7 +547,8 @@ export default function LeaveRequestDetailPage() {
           </SectionCard>
         ) : null}
 
-        <SectionCard title="CEO Review" subtitle="Latest CEO review details for this leave request.">
+        {timeline.ceo ? (
+          <SectionCard title={`${(isCeoViewingOwnRequest || isChairmanViewingCeoRequest) ? 'Chairperson' : (timeline.ceo.label === 'Chairman' ? 'Chairperson' : timeline.ceo.label)} Review`} subtitle={`Latest ${(isCeoViewingOwnRequest || isChairmanViewingCeoRequest) ? 'Chairperson' : (timeline.ceo.label === 'Chairman' ? 'Chairperson' : timeline.ceo.label)} review details for this leave request.`}>
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -538,6 +569,7 @@ export default function LeaveRequestDetailPage() {
             </div>
           </div>
         </SectionCard>
+        ) : null}
       </div>
 
       <Modal

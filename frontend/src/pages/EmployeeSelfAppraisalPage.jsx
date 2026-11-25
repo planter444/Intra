@@ -22,7 +22,7 @@ export default function EmployeeSelfAppraisalPage() {
   
   // Get current appraisal data for the user
   const currentAppraisal = settings?.kpi?.records?.[String(user.id)] || {};
-  const normalizedAppraisal = normalizeAppraisalData(currentAppraisal);
+  const normalizedAppraisal = normalizeAppraisalData(currentAppraisal && typeof currentAppraisal === 'object' ? currentAppraisal : {});
   
   // Form state for self-appraisal
   const [form, setForm] = useState({
@@ -37,6 +37,22 @@ export default function EmployeeSelfAppraisalPage() {
       overallComment: normalizedAppraisal.selfAppraisal.overallComment || ''
     }
   });
+
+  // Sync form when normalizedAppraisal changes
+  useEffect(() => {
+    setForm({
+      period: {
+        startDate: normalizedAppraisal.period.startDate || '',
+        endDate: normalizedAppraisal.period.endDate || '',
+        frequency: normalizedAppraisal.period.frequency || 'quarterly'
+      },
+      selfAppraisal: {
+        coreRoles: normalizedAppraisal.selfAppraisal.coreRoles || [],
+        indicators: normalizedAppraisal.selfAppraisal.indicators || [],
+        overallComment: normalizedAppraisal.selfAppraisal.overallComment || ''
+      }
+    });
+  }, [normalizedAppraisal]);
 
   const canEdit = canEditAppraisal(normalizedAppraisal, user.role, user.id);
   const isLocked = normalizedAppraisal.status === APPRAISAL_STATUS.LOCKED;
@@ -213,7 +229,8 @@ export default function EmployeeSelfAppraisalPage() {
   };
 
   const handleIndicatorScoreChange = (index, value) => {
-    const newIndicators = [...form.selfAppraisal.indicators];
+    const currentIndicators = Array.isArray(form.selfAppraisal.indicators) ? form.selfAppraisal.indicators : [];
+    const newIndicators = [...currentIndicators];
     newIndicators[index] = { ...newIndicators[index], selfScore: Math.min(100, Math.max(0, Number(value) || 0)) };
     setForm({
       ...form,
@@ -222,7 +239,8 @@ export default function EmployeeSelfAppraisalPage() {
   };
 
   const handleIndicatorCommentChange = (index, value) => {
-    const newIndicators = [...form.selfAppraisal.indicators];
+    const currentIndicators = Array.isArray(form.selfAppraisal.indicators) ? form.selfAppraisal.indicators : [];
+    const newIndicators = [...currentIndicators];
     newIndicators[index] = { ...newIndicators[index], selfComment: value };
     setForm({
       ...form,
@@ -230,7 +248,7 @@ export default function EmployeeSelfAppraisalPage() {
     });
   };
 
-  const selfScore = calculateAppraisalScore(form, 'self');
+  const selfScore = calculateAppraisalScore(form || {}, 'self');
 
   if (loading) {
     return (
@@ -401,7 +419,7 @@ export default function EmployeeSelfAppraisalPage() {
       {/* KPI Indicators */}
       <SectionCard title="KPI Indicators" subtitle="Rate your performance on each indicator (out of 100)">
         <div className="space-y-4">
-          {form.selfAppraisal.indicators.length === 0 ? (
+          {!Array.isArray(form.selfAppraisal.indicators) || form.selfAppraisal.indicators.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-sm text-slate-500">
               No KPI indicators have been configured for your appraisal yet. Please contact your supervisor.
             </div>
