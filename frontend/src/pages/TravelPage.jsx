@@ -492,8 +492,8 @@ export default function TravelPage() {
           />
         ) : (
           <>
-            {/* My Travel Requests Section - for finance, admin, administrator, administrator_and_membership_officer, CEO, chairman, and regular employees */}
-            {(['admin', 'finance', 'administrator', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair', 'employee'].includes(user.role) || user.positionTitle === 'Administration') && (
+            {/* My Travel Requests Section - for finance, admin, administrator, administrator_and_membership_officer, CEO, chairman, supervisor, and regular employees */}
+            {(['admin', 'finance', 'administrator', 'administrator_and_membership_officer', 'ceo', 'chairman', 'chairperson', 'chair', 'supervisor', 'employee'].includes(user.role) || user.positionTitle === 'Administration') && (
               <>
                 <div className="border-b-2 border-slate-300 pb-4 mb-6">
                   <h3 className="text-xl font-bold text-slate-900">My Travel Requests</h3>
@@ -509,7 +509,6 @@ export default function TravelPage() {
                     {displayedOwnRequests.map((request) => {
                       const config = getStatusConfig(request, user);
                       const StatusIcon = config.icon;
-                      const shouldHighlightForRequester = !request.viewedByUser && ['pending', 'pending_ceo', 'approved', 'in_progress', 'completed'].includes(request.status);
                       // For requester: if status is pending_ceo, it means CEO is the approver, so show "Pending CEO Approval"
                       // If status is pending, show "Pending Supervisor Approval"
                       const statusLabel = request.status === 'pending_ceo' ? 'Pending CEO Approval' : config.label;
@@ -517,9 +516,7 @@ export default function TravelPage() {
                       return (
                         <div
                           key={request.id}
-                          className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${
-                            shouldHighlightForRequester ? 'border-amber-400 bg-amber-50' : `${config.borderColor} ${config.bgColor}`
-                          }`}
+                          className="cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md bg-white border-slate-200"
                           onClick={() => navigate(`/travel/${request.id}`)}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -659,7 +656,7 @@ export default function TravelPage() {
                                   Cancel
                                 </button>
                               )}
-                              {/* Settle toggle for own approved requests */}
+                              {/* Settle toggle for own approved requests - only for users with edit permission */}
                               {String(request.userId) === String(user.id) && request.status === 'approved' && canEditSettled && (
                                 <button
                                   type="button"
@@ -677,6 +674,13 @@ export default function TravelPage() {
                                   <CheckCircle size={12} />
                                   {request.settled ? 'Settled' : 'Settle'}
                                 </button>
+                              )}
+                              {/* View-only settled indicator for regular employees - only show if settled */}
+                              {String(request.userId) === String(user.id) && request.status === 'approved' && !canEditSettled && request.settled && (
+                                <span className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-600 border-emerald-200 border">
+                                  <CheckCircle size={12} />
+                                  Settled
+                                </span>
                               )}
                               {/* IT Officer (admin) can delete any travel request */}
                               {user.role === 'admin' && (
@@ -708,6 +712,54 @@ export default function TravelPage() {
                     {showMoreOwnRequests ? 'Show Less' : `Show More (${ownRequests.length - 2} more)`}
                   </button>
                 )}
+              </>
+            )}
+
+            {/* Team Travel Requests Section - for supervisors */}
+            {user.role === 'supervisor' && teamRequests.length > 0 && (
+              <>
+                <div className="border-b-2 border-slate-300 pb-4 mb-6">
+                  <h3 className="text-xl font-bold text-slate-900">Team Travel Requests</h3>
+                  <p className="text-sm text-slate-500">Travel requests from your team members</p>
+                </div>
+                <div className="space-y-4 mb-6">
+                  {teamRequests.map((request) => {
+                    const config = getStatusConfig(request, user);
+                    const StatusIcon = config.icon;
+                    const shouldHighlightForSupervisor = config.highlight && request.status === 'pending' && String(request.userId) !== String(user.id);
+                    const statusLabel = request.status === 'pending' ? 'Pending Supervisor Approval' : config.label;
+                    return (
+                      <div
+                        key={request.id}
+                        className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${
+                          shouldHighlightForSupervisor ? 'border-amber-400 bg-amber-50' : `${config.borderColor} ${config.bgColor}`
+                        }`}
+                        onClick={() => navigate(`/travel/${request.id}`)}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${config.bgColor} ${config.color} ${config.borderColor} border`}>
+                                <StatusIcon size={12} />
+                                {statusLabel}
+                              </span>
+                              <span className="text-sm text-slate-400">{request.employeeName}</span>
+                            </div>
+                            <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 truncate">
+                              {request.origin} → {request.destination}
+                            </h3>
+                            <div className="mt-2 flex flex-wrap gap-3 text-xs sm:text-sm text-slate-600">
+                              <span className="flex items-center gap-1.5">
+                                <Calendar size={10} className="sm:size-10" />
+                                {request.startDate} {request.endDate !== request.startDate ? `- ${request.endDate}` : ''}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </>
             )}
 
@@ -962,192 +1014,6 @@ export default function TravelPage() {
         )}
       </SectionCard>
 
-      {showTeamSection && (
-        <SectionCard
-          title="Team Travel Requests"
-          subtitle="Manage travel requests from your team members."
-          actions={[
-            <button key="view-all" type="button" onClick={() => navigate('/travel')} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-              View All
-            </button>
-          ]}
-        >
-          <div className="space-y-4">
-            {teamRequests.slice(0, 5).map((request) => {
-              const config = getStatusConfig(request, user);
-              const StatusIcon = config.icon;
-              return (
-                <div
-                  key={request.id}
-                  className={`cursor-pointer rounded-2xl border p-5 transition-shadow hover:shadow-md ${config.borderColor} ${config.bgColor}`}
-                  onClick={() => navigate(`/travel/${request.id}`)}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${config.bgColor} ${config.color} ${config.borderColor} border`}>
-                          <StatusIcon size={14} />
-                          {config.label}
-                        </span>
-                        <span className="text-sm text-slate-400">{request.employeeName}</span>
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${
-                          isLocalMovement(request)
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                            : request.travelType === 'booking'
-                              ? 'bg-blue-50 text-blue-600 border-blue-200'
-                              : 'bg-purple-50 text-purple-600 border-purple-200'
-                        } border`}>
-                          {isLocalMovement(request)
-                            ? (request.travelType === 'booking' ? 'Local Booking' : 'Local Reimbursement')
-                            : request.travelType === 'booking' ? 'Official Booking' : 'Official Reimbursement'}
-                        </span>
-                      </div>
-                      <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                        {request.origin} → {request.destination}
-                      </h3>
-                      <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-600">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar size={16} />
-                          {request.startDate} {request.endDate !== request.startDate ? `- ${request.endDate}` : ''}
-                        </span>
-                        {request.travelType === 'reimbursement' ? (
-                          <span className="flex items-center gap-1.5">
-                            <DollarSign size={16} />
-                            {(() => {
-                              // Calculate total grouped by currency
-                              const amountsByCurrency = {};
-
-                              // Add DSA with correct currency from settings
-                              const dsa = request.dsaProvided ? 0 : (request.dsaAmount || 0);
-                              if (dsa > 0) {
-                                const dsaCurrency = getCorrectDSACurrency(request.dsaCurrency, request.travelCategory, settings);
-                                amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsa;
-                              }
-
-                              // Add accommodation (NOT for local movement)
-                              if (!isLocalMovement(request)) {
-                                const accommodation = request.accommodationProvided ? 0 : (request.accommodationAmount || 0);
-                                if (accommodation > 0) {
-                                  const accommodationCurrency = request.accommodationCurrency || 'KES';
-                                  amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodation;
-                                }
-                              }
-
-                              // Add transportation
-                              const transportation = request.transportationCost || 0;
-                              if (transportation > 0) {
-                                const currency = request.currency || 'KES';
-                                amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportation;
-                              }
-
-                              // Add other costs (NOT for local movement)
-                              if (!isLocalMovement(request)) {
-                                const other = request.estimatedCost || 0;
-                                if (other > 0) {
-                                  const currency = request.currency || 'KES';
-                                  amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + other;
-                                }
-                              }
-
-                              // Display as "180 USD + 6,000 KES"
-                              return Object.entries(amountsByCurrency)
-                                .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
-                                .join(' + ');
-                            })()}
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1.5">
-                            <DollarSign size={16} />
-                            {(() => {
-                              // Calculate total grouped by currency
-                              const amountsByCurrency = {};
-
-                              // Add DSA with correct currency from settings
-                              const dsa = request.dsaProvided ? 0 : (request.dsaAmount || 0);
-                              if (dsa > 0) {
-                                const dsaCurrency = getCorrectDSACurrency(request.dsaCurrency, request.travelCategory, settings);
-                                amountsByCurrency[dsaCurrency] = (amountsByCurrency[dsaCurrency] || 0) + dsa;
-                              }
-
-                              // Add accommodation (NOT for local movement)
-                              if (!isLocalMovement(request)) {
-                                const accommodation = request.accommodationProvided ? 0 : (request.accommodationAmount || 0);
-                                if (accommodation > 0) {
-                                  const accommodationCurrency = request.accommodationCurrency || 'KES';
-                                  amountsByCurrency[accommodationCurrency] = (amountsByCurrency[accommodationCurrency] || 0) + accommodation;
-                                }
-                              }
-
-                              // Add transportation
-                              const transportation = request.transportationCost || 0;
-                              if (transportation > 0) {
-                                const currency = request.currency || 'KES';
-                                amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + transportation;
-                              }
-
-                              // Add other costs (NOT for local movement)
-                              if (!isLocalMovement(request)) {
-                                const other = request.estimatedCost || 0;
-                                if (other > 0) {
-                                  const currency = request.currency || 'KES';
-                                  amountsByCurrency[currency] = (amountsByCurrency[currency] || 0) + other;
-                                }
-                              }
-
-                              // Display as "180 USD + 6,000 KES"
-                              return Object.entries(amountsByCurrency)
-                                .map(([curr, amount]) => `${Number(amount).toLocaleString()} ${curr}`)
-                                .join(' + ');
-                            })()}
-                          </span>
-                        )}
-                      </div>
-                      {request.reason && (
-                        <p className="mt-2 line-clamp-2 text-sm text-slate-500">{request.reason}</p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(canDecideTravel(user, request, employeeApprovers) || canChairmanApprove(user, request)) && (
-                        <div className="flex w-full sm:w-auto gap-2">
-                          <button
-                            type="button"
-                            className="flex-1 sm:flex-none rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActionModal({ open: true, request, action: 'approve', comment: '' });
-                            }}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="flex-1 sm:flex-none rounded-xl bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActionModal({ open: true, request, action: 'reject', comment: '' });
-                            }}
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {teamRequests.length > 5 && (
-              <button
-                type="button"
-                onClick={() => navigate('/travel')}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                View {teamRequests.length - 5} more team requests
-              </button>
-            )}
-          </div>
-        </SectionCard>
-      )}
 
       <Modal
         open={notice.open}
